@@ -6,20 +6,39 @@
 <title>Blooket Control Panel</title>
 
 <!--
-  WIRING CONTRACT — every hook the future logic will need is already in the DOM.
-  Add or rewire modules without touching CSS or structure.
+  ============================================================
+  DOM CONTRACT — engine.js binds to these, nothing else.
+  ============================================================
 
-    [data-module="id"]        module root (card)
-    [data-action="verb"]      any button/chip — start, stop, apply, deploy, kill…
-    [data-field="name"]       any input/toggle/select
-    [data-role="state"]       per-module status badge
-    [data-role="status"]      global connection pill
-    [data-role="log"]         log container (role="log", aria-live)
-    [data-stat="key"]         stat value slot — tokens, xp, blooks, uptime
-    [data-filter="key"]       log filter chips
+    [data-module="id"]      module root (card OR command row)
+    [data-action="verb"]    clickable control
+                              start · stop · apply · loop · deploy · recall
+                              kill · unlock · reset · attach · detach
+                              filter · clear · go
+    [data-field="name"]     input / toggle / select
+                              target · value · search · pin · account
+                              delay · delayMin · delayMax · tokens · xp
+                              strategy · enabled · autoBuy · loop
+                              gamesPerCycle · cooldown · stopOnError
+                              autoSell · includeEvent · includeChromatic
+    [data-role="state"]     per-module status badge
+    [data-role="status"]    global connection pill
+    [data-role="log"]       log container (aria-live)
+    [data-role="toasts"]    toast stack (engine pushes notifications here)
+    [data-stat="key"]       stat value slot
+                              tokens · xp · blooks · uptime
+    [data-filter="kind"]    log filter chip
 
-  Canonical card markup lives in <template id="module-template"> at the bottom.
-  Clone it, set data-module + labels, done.
+  Command rows (Live Overrides):
+    Every row is [data-module="cmd-*"] and its Go button is
+    [data-action="go"]. The engine reads data-field="target" and
+    data-field="value" (either may be absent), plus the row's
+    data-module to decide what to do.
+
+  Add a module → copy <template id="module-template"> (or clone a
+  command row), set data-module + labels, register in engine.js.
+  CSS never needs touching.
+  ============================================================
 -->
 
 <style>
@@ -190,7 +209,7 @@
     transition:background .15s ease,color .15s ease,border-color .15s ease;
   }
   .theme-toggle:hover{background:var(--surface-2);color:var(--txt);border-color:var(--line-strong)}
-  .theme-toggle:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+  .theme-toggle:focus-within{outline:2px solid var(--accent);outline-offset:2px}
   .theme-toggle span::before{content:"☾"}
   body:has(#theme-toggle:checked) .theme-toggle span::before{content:"☀"}
 
@@ -229,6 +248,11 @@
   }
   .sec-title::after{
     content:"";flex:1;height:1px;background:var(--line);
+  }
+
+  .sec-hint{
+    font-size:12px;color:var(--dim);line-height:1.55;
+    margin:-8px 0 15px 2px;
   }
 
   .grid{
@@ -289,7 +313,7 @@
     margin-bottom:6px;letter-spacing:.4px;
   }
 
-  input[type=text],input[type=number],select{
+  input[type=text],input[type=number],input[type=search],select{
     width:100%;background:var(--surface-3);border:1px solid var(--line);
     border-radius:var(--radius-sm);padding:9px 12px;color:var(--txt);
     font-family:inherit;font-size:12.5px;outline:none;
@@ -364,6 +388,41 @@
 
   .btn-ghost{background:transparent}
 
+  /* ---------------- command list (Live Overrides) ---------------- */
+  .commands{
+    background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);
+    overflow:hidden;
+  }
+
+  .command{
+    display:grid;
+    grid-template-columns:minmax(180px,1fr) minmax(0,2.2fr);
+    align-items:center;
+    gap:18px;
+    padding:14px 18px;
+    border-bottom:1px solid var(--line);
+    transition:background .15s ease;
+  }
+  .command:last-child{border-bottom:none}
+  .command:hover{background:var(--surface-2)}
+
+  .command-info strong{
+    display:block;font-size:13px;font-weight:650;letter-spacing:-.1px;
+  }
+  .command-info small{
+    display:block;font-size:11.5px;color:var(--muted);margin-top:2px;
+    line-height:1.5;
+  }
+
+  .command-inputs{
+    display:flex;gap:8px;flex-wrap:wrap;align-items:center;
+  }
+  .command-inputs input{
+    flex:1 1 130px;min-width:0;
+  }
+  .command-inputs button{flex:0 0 auto}
+
   /* ---------------- console ---------------- */
   .console{
     background:var(--surface-3);border:1px solid var(--line);
@@ -376,6 +435,21 @@
     padding:11px 15px;background:var(--surface);border-bottom:1px solid var(--line);
   }
   .console-bar h3{font-size:12.5px;font-weight:650}
+
+  .console-tools{
+    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  }
+
+  .console-search{
+    background:var(--surface-3);border:1px solid var(--line);
+    border-radius:999px;padding:6px 13px;color:var(--txt);
+    font-family:inherit;font-size:11.5px;outline:none;
+    width:150px;transition:border-color .15s ease,box-shadow .15s ease;
+  }
+  .console-search:focus{
+    border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);
+  }
+
   .chips{display:flex;gap:6px;flex-wrap:wrap}
 
   .chip{
@@ -389,7 +463,7 @@
 
   .console-body{
     padding:15px;font-family:var(--mono);font-size:12px;line-height:1.95;
-    max-height:240px;overflow-y:auto;
+    max-height:260px;overflow-y:auto;
   }
   .console-body p{color:var(--muted);white-space:pre-wrap;word-break:break-word}
   .console-body .t{color:var(--dim);margin-right:10px}
@@ -409,6 +483,36 @@
     padding-top:8px;
   }
 
+  /* ---------------- toast stack ---------------- */
+  .toast-stack{
+    position:fixed;top:22px;right:22px;z-index:120;
+    display:flex;flex-direction:column;gap:10px;
+    max-width:340px;width:calc(100% - 44px);
+    pointer-events:none;
+  }
+
+  .toast{
+    pointer-events:auto;
+    background:var(--surface);
+    border:1px solid var(--line);
+    border-left:3px solid var(--accent);
+    border-radius:var(--radius-sm);
+    padding:12px 15px;
+    font-size:12.5px;line-height:1.5;
+    box-shadow:var(--shadow);
+    animation:toastIn .22s ease;
+  }
+  .toast.ok  {border-left-color:var(--green)}
+  .toast.warn{border-left-color:var(--amber)}
+  .toast.err {border-left-color:var(--red)}
+  .toast strong{display:block;font-size:12px;font-weight:700;margin-bottom:3px}
+  .toast span{color:var(--muted)}
+
+  @keyframes toastIn{
+    from{opacity:0;transform:translateX(24px)}
+    to{opacity:1;transform:none}
+  }
+
   /* ---------------- responsive ---------------- */
   @media (max-width:1024px){
     .shell{grid-template-columns:1fr;gap:24px;padding:22px 18px 60px}
@@ -425,11 +529,18 @@
     .side-note{display:none}
   }
 
+  @media (max-width:640px){
+    .command{grid-template-columns:1fr;gap:10px}
+    .command-inputs input{flex:1 1 100%}
+    .command-inputs button{flex:1 1 100%}
+  }
+
   @media (max-width:520px){
     .shell{padding:18px 14px 48px}
     .grid{grid-template-columns:1fr}
     .stats{grid-template-columns:repeat(2,1fr)}
     .actions button{flex:1 1 auto}
+    .toast-stack{top:14px;right:14px;width:calc(100% - 28px)}
   }
 
   @media (prefers-reduced-motion:reduce){
@@ -440,9 +551,11 @@
 </head>
 <body>
 
+<input type="checkbox" id="theme-toggle" class="sr-only" aria-label="Toggle color theme" />
 <a class="skip" href="#main">Skip to content</a>
 
-<input type="checkbox" id="theme-toggle" class="sr-only" aria-label="Toggle color theme" />
+<!-- Toast stack — engine pushes notifications here -->
+<div class="toast-stack" data-role="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <div class="shell">
 
@@ -458,6 +571,7 @@
 
     <nav class="nav" aria-label="Sections">
       <a href="#overview">Overview</a>
+      <a href="#overrides">Overrides</a>
       <a href="#gameplay">Gameplay</a>
       <a href="#account">Account</a>
       <a href="#connection">Connection</a>
@@ -478,8 +592,7 @@
         <span data-role="status">Disconnected — no game attached</span>
       </div>
 
-      <label class="theme-toggle" title="Toggle theme">
-        <input type="checkbox" id="theme-toggle" class="sr-only" />
+      <label class="theme-toggle" for="theme-toggle" title="Toggle theme">
         <span aria-hidden="true"></span>
         <span class="sr-only">Toggle color theme</span>
       </label>
@@ -491,6 +604,120 @@
       <div class="stat"><span>XP</span><strong data-stat="xp">0</strong></div>
       <div class="stat"><span>Blooks Owned</span><strong data-stat="blooks">0 / 0</strong></div>
       <div class="stat"><span>Session Uptime</span><strong data-stat="uptime">00:00:00</strong></div>
+    </section>
+
+    <!-- ============ LIVE OVERRIDES ============ -->
+    <section id="overrides">
+      <p class="sec-title">Live Overrides</p>
+      <p class="sec-hint">
+        Type anything into the value box — numbers, text, whatever — then hit Go.
+        Leave the player field blank to target yourself.
+      </p>
+
+      <div class="commands">
+
+        <div class="command" data-module="cmd-score">
+          <div class="command-info">
+            <strong>Change Score</strong>
+            <small>Set a player's score to any value</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="target" placeholder="player (blank = you)" />
+            <input type="text" data-field="value" placeholder="value" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-name">
+          <div class="command-info">
+            <strong>Change Name</strong>
+            <small>Rename yourself in the current game</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="new name" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-tokens">
+          <div class="command-info">
+            <strong>Set Tokens</strong>
+            <small>Overwrite your token balance exactly</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="exact amount" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-xp">
+          <div class="command-info">
+            <strong>Set XP</strong>
+            <small>Overwrite your XP total exactly</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="exact amount" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-level">
+          <div class="command-info">
+            <strong>Set Level</strong>
+            <small>Jump your account level to any number</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="level" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-blook">
+          <div class="command-info">
+            <strong>Equip Blook</strong>
+            <small>Swap your active blook by name or ID</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="blook name or id" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-chat">
+          <div class="command-info">
+            <strong>Send Chat</strong>
+            <small>Broadcast a message to the lobby</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="message" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-currency">
+          <div class="command-info">
+            <strong>Set In-Game Currency</strong>
+            <small>Gold, crypto, fossils — depends on the mode</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="target" placeholder="player (blank = you)" />
+            <input type="text" data-field="value" placeholder="amount" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-kick">
+          <div class="command-info">
+            <strong>Kick Player</strong>
+            <small>Remove a player from the current game</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="target" placeholder="player name" />
+            <button class="btn-danger" data-action="go">Kick</button>
+          </div>
+        </div>
+
+      </div>
     </section>
 
     <!-- ============ GAMEPLAY ============ -->
@@ -764,13 +991,16 @@
       <div class="console">
         <div class="console-bar">
           <h3>Console</h3>
-          <div class="chips" role="group" aria-label="Log filter">
-            <button class="chip is-active" data-action="filter" data-filter="all">All</button>
-            <button class="chip" data-action="filter" data-filter="info">Info</button>
-            <button class="chip" data-action="filter" data-filter="ok">Success</button>
-            <button class="chip" data-action="filter" data-filter="warn">Warn</button>
-            <button class="chip" data-action="filter" data-filter="err">Error</button>
-            <button class="chip" data-action="clear">Clear</button>
+          <div class="console-tools">
+            <input type="search" class="console-search" data-field="search" placeholder="Search log…" aria-label="Search log" />
+            <div class="chips" role="group" aria-label="Log filter">
+              <button class="chip is-active" data-action="filter" data-filter="all">All</button>
+              <button class="chip" data-action="filter" data-filter="info">Info</button>
+              <button class="chip" data-action="filter" data-filter="ok">Success</button>
+              <button class="chip" data-action="filter" data-filter="warn">Warn</button>
+              <button class="chip" data-action="filter" data-filter="err">Error</button>
+              <button class="chip" data-action="clear">Clear</button>
+            </div>
           </div>
         </div>
 
@@ -787,8 +1017,7 @@
 </div>
 
 <!-- ============ CANONICAL MODULE TEMPLATE ============
-     Clone this, set data-module and the visible labels.
-     No CSS or layout changes required for new modules.
+     Clone this, set data-module + labels, register a handler in engine.js.
 -->
 <template id="module-template">
   <article class="card" data-module="MODULE_ID">
@@ -826,5 +1055,23 @@
   </article>
 </template>
 
+<!-- ============ COMMAND ROW TEMPLATE ============
+     Clone for new [data-action="go"] overrides.
+-->
+<template id="command-template">
+  <div class="command" data-module="cmd-ID">
+    <div class="command-info">
+      <strong>Command Title</strong>
+      <small>What it does.</small>
+    </div>
+    <div class="command-inputs">
+      <input type="text" data-field="target" placeholder="player (blank = you)" />
+      <input type="text" data-field="value" placeholder="value" />
+      <button class="btn-primary" data-action="go">Go</button>
+    </div>
+  </div>
+</template>
+
+<script src="engine.js" defer></script>
 </body>
 </html>
