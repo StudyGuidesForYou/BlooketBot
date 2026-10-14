@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blooket Bridge</title>
+<style>
+body{background:#0e1116;color:#d7dee9;font:14px system-ui,sans-serif;padding:20px;max-width:520px;margin:auto}
+h1{font-size:16px;letter-spacing:.06em;text-transform:uppercase;color:#00d4ff;margin-bottom:16px}
+.card{background:#131820;border:1px solid #1e2633;border-radius:4px;padding:14px;margin-bottom:14px}
+.sess{font:700 24px "SF Mono",monospace;color:#00d4ff;letter-spacing:.2em;text-align:center;padding:12px;background:#0b0e13;border-radius:3px}
+button{font:600 12px "SF Mono",monospace;text-transform:uppercase;padding:10px 16px;border:1px solid #2a3546;background:#131820;color:#d7dee9;border-radius:3px;cursor:pointer;margin:4px 4px 4px 0}
+button.p{background:linear-gradient(180deg,#00d4ff,#0091ff);color:#001218;border-color:transparent;font-weight:700}
+button.d{color:#ff4d5e;border-color:rgba(255,77,94,.35)}
+#status{font:12px "SF Mono",monospace;color:#8b97a8;margin-top:10px;line-height:1.8}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#4d5868;margin-right:6px}
+.dot.on{background:#3ddc84;box-shadow:0 0 6px #3ddc84}
+.dot.err{background:#ff4d5e}
+label{display:block;font:10.5px "SF Mono",monospace;text-transform:uppercase;color:#8b97a8;margin:8px 0 4px}
+input{width:100%;background:#0b0e13;border:1px solid #1e2633;color:#d7dee9;padding:8px;font:13px monospace;border-radius:3px}
+</style>
+</head>
+<body>
+<h1>Blooket Bridge</h1>
+
+<div class="card">
+  <div style="font:10.5px monospace;text-transform:uppercase;color:#8b97a8;margin-bottom:6px">Session code</div>
+  <div class="sess" id="sc">----</div>
+  <p style="font-size:12px;color:#8b97a8;margin-top:10px">Open Blooket, tap the bridge bookmark, enter this code.</p>
+</div>
+
+<div class="card">
+  <div style="font:10.5px monospace;text-transform:uppercase;color:#8b97a8;margin-bottom:6px">Commands</div>
+  <button class="p" onclick="cmd('ping')">Ping</button>
+  <button class="p" onclick="cmd('auto',{on:true})">Auto-Answer ON</button>
+  <button onclick="cmd('auto',{on:false})">Auto-Answer OFF</button>
+  <button class="p" onclick="cmd('frenzy',{on:true})">Start Frenzy</button>
+  <label>Set score to</label>
+  <input id="sv" type="number" placeholder="e.g. 9999">
+  <button onclick="cmd('score',{value:Number(document.getElementById('sv').value)||0})">Send</button>
+</div>
+
+<div class="card">
+  <div style="font:10.5px monospace;text-transform:uppercase;color:#8b97a8;margin-bottom:6px">Status</div>
+  <div id="status"><span class="dot"></span>No bookmark connected yet</div>
+</div>
+
+<script>
+const P = 'blooketbot-8ba54-default-rtdb.firebaseio.com';
+const S = Math.random().toString(36).slice(2,6).toUpperCase();
+document.getElementById('sc').textContent = S;
+const U = 'https://' + P + '/sessions/' + S;
+
+let lastCmd = 0;
+let lastResult = null;
+
+async function cmd(type, extra) {
+  lastCmd = Date.now();
+  lastResult = null;
+  await fetch(U + '/command.json', {
+    method: 'PUT',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({type, id: lastCmd, ...(extra || {})})
+  });
+  paint();
+}
+
+function paint() {
+  const el = document.getElementById('status');
+  const now = Date.now();
+  const fresh = (now - lastCmd) < 60000;
+  let dot = 'dot';
+  let line = 'Waiting for commands';
+  if (lastResult) {
+    if (lastResult.ok) dot += ' on'; else dot += ' err';
+    line = (lastResult.ok ? '✓ ' : '✗ ') + lastResult.msg;
+  } else if (fresh) {
+    line = 'Command sent — waiting for bookmark...';
+  }
+  el.innerHTML = '<span class="' + dot + '"></span>' + line;
+}
+
+async function poll() {
+  try {
+    const r = await fetch(U + '/result.json');
+    if (r.ok) {
+      const j = await r.json();
+      if (j && j.id > (lastResult?.id || 0)) {
+        lastResult = j;
+        paint();
+      }
+    }
+  } catch {}
+  setTimeout(poll, 800);
+}
+poll();
+</script>
+</body>
+</html>
