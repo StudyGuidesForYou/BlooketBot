@@ -7,37 +7,34 @@
 
 <!--
   ============================================================
-  DOM CONTRACT — engine.js binds to these, nothing else.
+  DOM CONTRACT — engine.js binds to these.
   ============================================================
 
-    [data-module="id"]      module root (card OR command row)
+    [data-module="id"]      module root
     [data-action="verb"]    clickable control
-                              start · stop · apply · loop · deploy · recall
-                              kill · unlock · reset · attach · detach
-                              filter · clear · go
     [data-field="name"]     input / toggle / select
-                              target · value · search · pin · account
-                              delay · delayMin · delayMax · tokens · xp
-                              strategy · enabled · autoBuy · loop
-                              gamesPerCycle · cooldown · stopOnError
-                              autoSell · includeEvent · includeChromatic
-    [data-role="state"]     per-module status badge
-    [data-role="status"]    global connection pill
-    [data-role="log"]       log container (aria-live)
-    [data-role="toasts"]    toast stack (engine pushes notifications here)
+    [data-role="state"]     per-module badge
+    [data-role="status"]    global pill
+    [data-role="log"]       log container
+    [data-role="toasts"]    toast stack
+    [data-role="blook-grid"]      blook picker results
+    [data-role="blook-selected"]  current pick label
     [data-stat="key"]       stat value slot
-                              tokens · xp · blooks · uptime
     [data-filter="kind"]    log filter chip
 
-  Command rows (Live Overrides):
-    Every row is [data-module="cmd-*"] and its Go button is
-    [data-action="go"]. The engine reads data-field="target" and
-    data-field="value" (either may be absent), plus the row's
-    data-module to decide what to do.
+  Sections:
+    Join — pin + name + attach
+    Blooks — pick any blook to play as
+    Overrides — in-match commands (cmd-*)
+    Gameplay — auto-answer, auto-bot, grind
+    Console — activity log
 
-  Add a module → copy <template id="module-template"> (or clone a
-  command row), set data-module + labels, register in engine.js.
-  CSS never needs touching.
+  Blook grid is populated by engine.js as
+    <button class="blook" data-action="pick" data-blook-id="..." data-blook-name="...">
+      <span class="blook-dot" style="--c:#hex"></span>
+      <span>Name</span>
+      <small>rarity</small>
+    </button>
   ============================================================
 -->
 
@@ -65,37 +62,37 @@
     --red-soft:rgba(255,77,94,.14);
     --glow-a:#1b2440;
     --glow-b:#2a1d45;
-    --shadow:0 10px 30px rgba(0,0,0,.35);
-    --radius:16px;
-    --radius-sm:10px;
+    --shadow:0 8px 22px rgba(0,0,0,.35);
+    --radius:12px;
+    --radius-sm:8px;
     --sans:"Segoe UI",Inter,system-ui,-apple-system,sans-serif;
     --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,Monaco,monospace;
   }
 
   body:has(#theme-toggle:checked){
     color-scheme: light;
-    --bg:#f3f5fa;
+    --bg:#f4f6fa;
     --surface:#ffffff;
     --surface-2:#f8fafd;
     --surface-3:#ffffff;
-    --line:#e3e9f2;
+    --line:#e5eaf3;
     --line-strong:#c8d4e6;
     --txt:#111726;
     --muted:#65718a;
     --dim:#9aa5b8;
     --accent:#3b7bff;
     --accent-2:#6b4cff;
-    --accent-soft:rgba(59,123,255,.12);
-    --accent-ring:rgba(59,123,255,.30);
+    --accent-soft:rgba(59,123,255,.10);
+    --accent-ring:rgba(59,123,255,.25);
     --green:#0f9d58;
     --amber:#b8730a;
     --red:#dc3545;
-    --green-soft:rgba(15,157,88,.12);
-    --amber-soft:rgba(184,115,10,.12);
-    --red-soft:rgba(220,53,69,.12);
-    --glow-a:#dfe8ff;
-    --glow-b:#ece2ff;
-    --shadow:0 10px 30px rgba(20,40,80,.08);
+    --green-soft:rgba(15,157,88,.10);
+    --amber-soft:rgba(184,115,10,.10);
+    --red-soft:rgba(220,53,69,.10);
+    --glow-a:#e3ebff;
+    --glow-b:#efe6ff;
+    --shadow:0 8px 22px rgba(20,40,80,.06);
   }
 
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -104,14 +101,14 @@
 
   body{
     background:
-      radial-gradient(1200px 600px at 12% -12%, var(--glow-a) 0%, transparent 62%),
-      radial-gradient(900px 520px at 100% 0%, var(--glow-b) 0%, transparent 58%),
+      radial-gradient(1000px 480px at 12% -12%, var(--glow-a) 0%, transparent 62%),
+      radial-gradient(800px 420px at 100% 0%, var(--glow-b) 0%, transparent 58%),
       var(--bg);
     background-attachment:fixed;
     color:var(--txt);
     font-family:var(--sans);
-    font-size:14px;
-    line-height:1.5;
+    font-size:13px;
+    line-height:1.45;
     min-height:100vh;
     -webkit-font-smoothing:antialiased;
   }
@@ -122,107 +119,94 @@
   }
 
   .skip{
-    position:absolute;left:16px;top:-60px;z-index:99;
-    background:var(--accent);color:#fff;padding:10px 16px;
+    position:absolute;left:12px;top:-60px;z-index:99;
+    background:var(--accent);color:#fff;padding:8px 14px;
     border-radius:var(--radius-sm);font-weight:600;text-decoration:none;
     transition:top .18s ease;
   }
-  .skip:focus{top:16px}
+  .skip:focus{top:12px}
 
   /* ---------------- shell ---------------- */
   .shell{
-    max-width:1240px;margin:0 auto;padding:28px 22px 72px;
-    display:grid;grid-template-columns:224px minmax(0,1fr);gap:30px;
+    max-width:1180px;margin:0 auto;padding:18px 18px 48px;
+    display:flex;flex-direction:column;gap:20px;
   }
 
-  /* ---------------- sidebar ---------------- */
-  .sidebar{
-    position:sticky;top:28px;align-self:start;
-    display:flex;flex-direction:column;gap:22px;
+  /* ---------------- topbar ---------------- */
+  .topbar{
+    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
+    padding:10px 14px;background:var(--surface);
+    border:1px solid var(--line);border-radius:var(--radius);
+    box-shadow:var(--shadow);
+    position:sticky;top:14px;z-index:20;
+    backdrop-filter:blur(10px);
   }
 
-  .brand{display:flex;align-items:center;gap:12px}
+  .brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
 
   .logo{
-    width:44px;height:44px;border-radius:13px;flex:0 0 auto;
+    width:30px;height:30px;border-radius:9px;
     background:linear-gradient(135deg,var(--accent),var(--accent-2));
     display:grid;place-items:center;
-    font-weight:800;font-size:19px;color:#fff;
-    box-shadow:0 8px 22px var(--accent-ring);
+    font-weight:800;font-size:14px;color:#fff;
+    box-shadow:0 4px 12px var(--accent-ring);
   }
 
-  .brand h1{font-size:15.5px;font-weight:700;letter-spacing:-.2px}
-  .brand p{font-size:11.5px;color:var(--muted)}
+  .brand h1{font-size:13.5px;font-weight:700;letter-spacing:-.1px}
+  .brand p{font-size:10.5px;color:var(--muted);line-height:1}
 
-  .nav{display:flex;flex-direction:column;gap:2px}
-
+  .nav{
+    display:flex;gap:2px;flex:1 1 auto;overflow-x:auto;
+    scrollbar-width:none;-ms-overflow-style:none;
+  }
+  .nav::-webkit-scrollbar{display:none}
   .nav a{
-    display:flex;align-items:center;gap:10px;
-    padding:9px 12px;border-radius:var(--radius-sm);
-    color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;
+    white-space:nowrap;padding:6px 11px;border-radius:var(--radius-sm);
+    color:var(--muted);text-decoration:none;font-size:12px;font-weight:500;
     transition:background .15s ease,color .15s ease;
   }
   .nav a:hover{background:var(--surface-2);color:var(--txt)}
-  .nav a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-  .nav a::before{
-    content:"";width:6px;height:6px;border-radius:50%;
-    background:currentColor;opacity:.45;flex:0 0 auto;
-  }
+  .nav a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
-  .side-note{
-    font-size:11.5px;color:var(--dim);line-height:1.7;
-    border-top:1px solid var(--line);padding-top:16px;
-  }
-
-  /* ---------------- main ---------------- */
-  .main{display:flex;flex-direction:column;gap:34px;min-width:0}
-
-  .topbar{
-    display:flex;align-items:center;justify-content:space-between;
-    gap:16px;flex-wrap:wrap;
-  }
+  .topbar-right{display:flex;align-items:center;gap:10px;flex:0 0 auto}
 
   .pill{
-    display:inline-flex;align-items:center;gap:9px;
-    background:var(--surface);border:1px solid var(--line);
-    padding:8px 15px;border-radius:999px;
-    font-size:12.5px;color:var(--muted);
-    box-shadow:var(--shadow);
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--surface-2);border:1px solid var(--line);
+    padding:5px 11px;border-radius:999px;
+    font-size:11.5px;color:var(--muted);
   }
 
-  .dot{
-    width:8px;height:8px;border-radius:50%;
-    background:var(--muted);flex:0 0 auto;
-  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:0 0 auto}
   .dot.live{background:var(--green);animation:pulse 2s infinite}
   @keyframes pulse{
     0%{box-shadow:0 0 0 0 var(--green-soft)}
-    70%{box-shadow:0 0 0 9px transparent}
+    70%{box-shadow:0 0 0 8px transparent}
     100%{box-shadow:0 0 0 0 transparent}
   }
 
   .theme-toggle{
     display:grid;place-items:center;
-    width:38px;height:38px;border-radius:var(--radius-sm);
-    background:var(--surface);border:1px solid var(--line);
-    cursor:pointer;color:var(--muted);font-size:16px;
-    transition:background .15s ease,color .15s ease,border-color .15s ease;
+    width:30px;height:30px;border-radius:var(--radius-sm);
+    background:var(--surface-2);border:1px solid var(--line);
+    cursor:pointer;color:var(--muted);font-size:13px;
+    transition:background .15s ease,color .15s ease;
   }
-  .theme-toggle:hover{background:var(--surface-2);color:var(--txt);border-color:var(--line-strong)}
-  .theme-toggle:focus-within{outline:2px solid var(--accent);outline-offset:2px}
+  .theme-toggle:hover{background:var(--surface);color:var(--txt)}
+  .theme-toggle:focus-within{outline:2px solid var(--accent);outline-offset:1px}
   .theme-toggle span::before{content:"☾"}
   body:has(#theme-toggle:checked) .theme-toggle span::before{content:"☀"}
 
   /* ---------------- stats ---------------- */
   .stats{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
-    gap:14px;
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
+    gap:10px;
   }
 
   .stat{
     background:linear-gradient(180deg,var(--surface-2),var(--surface));
     border:1px solid var(--line);border-radius:var(--radius);
-    padding:15px 17px;position:relative;overflow:hidden;
+    padding:10px 13px;position:relative;overflow:hidden;
   }
   .stat::after{
     content:"";position:absolute;inset:0 auto 0 0;width:2px;
@@ -230,93 +214,86 @@
     opacity:.7;
   }
   .stat span{
-    display:block;font-size:11px;text-transform:uppercase;
-    letter-spacing:.9px;color:var(--muted);margin-bottom:7px;
+    display:block;font-size:10px;text-transform:uppercase;
+    letter-spacing:.8px;color:var(--muted);margin-bottom:3px;
   }
   .stat strong{
-    font-size:21px;font-weight:700;letter-spacing:-.5px;
+    font-size:16px;font-weight:700;letter-spacing:-.3px;
     font-variant-numeric:tabular-nums;
   }
 
   /* ---------------- sections ---------------- */
-  section{scroll-margin-top:24px}
+  section{scroll-margin-top:80px}
 
   .sec-title{
-    display:flex;align-items:center;gap:12px;
-    font-size:11.5px;text-transform:uppercase;letter-spacing:1.4px;
-    color:var(--muted);font-weight:600;margin-bottom:15px;
+    display:flex;align-items:center;gap:10px;
+    font-size:10.5px;text-transform:uppercase;letter-spacing:1.2px;
+    color:var(--muted);font-weight:600;margin-bottom:10px;
   }
-  .sec-title::after{
-    content:"";flex:1;height:1px;background:var(--line);
-  }
+  .sec-title::after{content:"";flex:1;height:1px;background:var(--line)}
 
   .sec-hint{
-    font-size:12px;color:var(--dim);line-height:1.55;
-    margin:-8px 0 15px 2px;
+    font-size:11.5px;color:var(--dim);line-height:1.5;
+    margin:-4px 0 10px;
   }
 
   .grid{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
-    gap:16px;
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
+    gap:12px;
   }
 
   /* ---------------- card ---------------- */
   .card{
     background:linear-gradient(180deg,var(--surface-2),var(--surface));
     border:1px solid var(--line);border-radius:var(--radius);
-    padding:19px;display:flex;flex-direction:column;gap:15px;
-    transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease;
+    padding:14px;display:flex;flex-direction:column;gap:11px;
+    transition:border-color .15s ease;
   }
-  .card:hover{
-    border-color:var(--line-strong);
-    transform:translateY(-2px);
-    box-shadow:var(--shadow);
-  }
+  .card:hover{border-color:var(--line-strong)}
 
-  .card-head{display:flex;align-items:flex-start;gap:12px}
+  .card-head{display:flex;align-items:flex-start;gap:10px}
 
   .icon{
-    width:38px;height:38px;border-radius:11px;flex:0 0 auto;
-    display:grid;place-items:center;font-size:16px;
-    background:var(--accent-soft);border:1px solid var(--accent-ring);
-    color:var(--accent);
+    width:30px;height:30px;border-radius:8px;flex:0 0 auto;
+    display:grid;place-items:center;font-size:13px;
+    background:var(--accent-soft);color:var(--accent);
   }
-  .icon.g{background:var(--green-soft);border-color:transparent;color:var(--green)}
-  .icon.a{background:var(--amber-soft);border-color:transparent;color:var(--amber)}
-  .icon.p{background:rgba(124,92,255,.14);border-color:transparent;color:var(--accent-2)}
-  .icon.r{background:var(--red-soft);border-color:transparent;color:var(--red)}
+  .icon.g{background:var(--green-soft);color:var(--green)}
+  .icon.a{background:var(--amber-soft);color:var(--amber)}
+  .icon.p{background:rgba(124,92,255,.12);color:var(--accent-2)}
+  .icon.r{background:var(--red-soft);color:var(--red)}
 
   .card-title{flex:1;min-width:0}
-  .card-title h3{font-size:14px;font-weight:650;letter-spacing:-.1px}
-  .card-title p{font-size:11.5px;color:var(--muted);margin-top:2px}
+  .card-title h3{font-size:12.5px;font-weight:650;letter-spacing:-.1px}
+  .card-title p{font-size:11px;color:var(--muted);margin-top:1px}
 
   .badge{
-    flex:0 0 auto;font-size:10.5px;font-weight:700;
-    letter-spacing:.7px;text-transform:uppercase;
-    padding:4px 9px;border-radius:999px;
+    flex:0 0 auto;font-size:9.5px;font-weight:700;
+    letter-spacing:.6px;text-transform:uppercase;
+    padding:3px 8px;border-radius:999px;
     background:var(--surface-3);border:1px solid var(--line);color:var(--muted);
   }
   .badge.live{background:var(--green-soft);border-color:transparent;color:var(--green)}
   .badge.warn{background:var(--amber-soft);border-color:transparent;color:var(--amber)}
   .badge.err{background:var(--red-soft);border-color:transparent;color:var(--red)}
 
-  .card-body{font-size:12.5px;color:var(--muted);line-height:1.62}
+  .card-body{font-size:11.5px;color:var(--muted);line-height:1.5}
 
   .divider{height:1px;background:var(--line);border:0}
 
-  .fields{display:flex;flex-direction:column;gap:13px}
-  .field-row{display:flex;gap:12px;flex-wrap:wrap}
-  .field-row > *{flex:1 1 130px;min-width:0}
+  .fields{display:flex;flex-direction:column;gap:9px}
+  .field-row{display:flex;gap:8px;flex-wrap:wrap}
+  .field-row > *{flex:1 1 110px;min-width:0}
 
   label.field-label{
-    display:block;font-size:11px;color:var(--muted);
-    margin-bottom:6px;letter-spacing:.4px;
+    display:block;font-size:10.5px;color:var(--muted);
+    margin-bottom:4px;letter-spacing:.3px;
   }
 
   input[type=text],input[type=number],input[type=search],select{
     width:100%;background:var(--surface-3);border:1px solid var(--line);
-    border-radius:var(--radius-sm);padding:9px 12px;color:var(--txt);
-    font-family:inherit;font-size:12.5px;outline:none;
+    border-radius:var(--radius-sm);padding:7px 10px;color:var(--txt);
+    font-family:inherit;font-size:12px;outline:none;
     transition:border-color .15s ease,box-shadow .15s ease;
   }
   input::placeholder{color:var(--dim)}
@@ -327,9 +304,9 @@
   select{cursor:pointer;appearance:none;
     background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
                      linear-gradient(135deg,var(--muted) 50%,transparent 50%);
-    background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;
-    background-size:5px 5px,5px 5px;background-repeat:no-repeat;
-    padding-right:34px;
+    background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;
+    background-size:4px 4px,4px 4px;background-repeat:no-repeat;
+    padding-right:28px;
   }
 
   /* ---------------- toggles ---------------- */
@@ -337,47 +314,47 @@
 
   .toggle{
     display:flex;align-items:center;justify-content:space-between;
-    gap:14px;padding:10px 0;cursor:pointer;
+    gap:10px;padding:7px 0;cursor:pointer;
     border-bottom:1px solid var(--line);
   }
   .toggle:last-child{border-bottom:none}
-  .toggle span{font-size:12.5px;color:var(--txt)}
+  .toggle span{font-size:11.5px;color:var(--txt)}
 
   .switch{
     appearance:none;-webkit-appearance:none;
-    width:42px;height:24px;border-radius:999px;flex:0 0 auto;
+    width:34px;height:19px;border-radius:999px;flex:0 0 auto;
     background:var(--line);border:1px solid var(--line);
     position:relative;cursor:pointer;margin:0;
     transition:background .18s ease,border-color .18s ease;
   }
   .switch::after{
     content:"";position:absolute;top:2px;left:2px;
-    width:18px;height:18px;border-radius:50%;
+    width:13px;height:13px;border-radius:50%;
     background:var(--muted);
     transition:transform .18s ease,background .18s ease;
   }
   .switch:checked{background:var(--accent-soft);border-color:var(--accent)}
-  .switch:checked::after{transform:translateX(18px);background:var(--accent)}
-  .switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .switch:checked::after{transform:translateX(15px);background:var(--accent)}
+  .switch:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
 
   /* ---------------- buttons ---------------- */
-  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:auto}
+  .actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
 
   button{
-    font-family:inherit;font-size:12.5px;font-weight:600;
-    border-radius:var(--radius-sm);padding:9px 16px;cursor:pointer;
+    font-family:inherit;font-size:11.5px;font-weight:600;
+    border-radius:var(--radius-sm);padding:7px 13px;cursor:pointer;
     border:1px solid var(--line);background:var(--surface-3);color:var(--txt);
     transition:background .15s ease,border-color .15s ease,opacity .12s ease;
   }
   button:hover{background:var(--surface-2);border-color:var(--line-strong)}
   button:active{opacity:.7}
-  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
   button:disabled{opacity:.4;cursor:not-allowed}
 
   .btn-primary{
     background:linear-gradient(135deg,var(--accent),var(--accent-2));
     border-color:transparent;color:#fff;
-    box-shadow:0 6px 16px var(--accent-ring);
+    box-shadow:0 4px 12px var(--accent-ring);
   }
   .btn-primary:hover{background:linear-gradient(135deg,var(--accent-2),var(--accent))}
 
@@ -388,19 +365,75 @@
 
   .btn-ghost{background:transparent}
 
-  /* ---------------- command list (Live Overrides) ---------------- */
+  /* ---------------- blook picker ---------------- */
+  .picker{
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);overflow:hidden;
+  }
+
+  .picker-bar{
+    display:flex;gap:8px;padding:11px 13px;
+    border-bottom:1px solid var(--line);background:var(--surface-2);
+    flex-wrap:wrap;
+  }
+  .picker-bar input{flex:1 1 220px}
+  .picker-bar button{flex:0 0 auto}
+
+  .blook-grid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
+    gap:6px;padding:11px 13px;max-height:300px;overflow-y:auto;
+  }
+  .blook-grid::-webkit-scrollbar{width:8px}
+  .blook-grid::-webkit-scrollbar-thumb{
+    background:var(--line);border-radius:999px;border:2px solid var(--surface);
+  }
+  .blook-grid:empty::after{
+    content:"No catalog loaded — hit Load Catalog.";
+    grid-column:1 / -1;
+    color:var(--dim);font-size:11.5px;padding:14px 0;text-align:center;
+  }
+
+  .blook{
+    display:flex;align-items:center;gap:8px;
+    padding:6px 9px;border-radius:var(--radius-sm);
+    background:var(--surface-2);border:1px solid var(--line);
+    color:var(--txt);font-size:11.5px;font-weight:500;
+    cursor:pointer;text-align:left;width:100%;
+    transition:background .15s ease,border-color .15s ease;
+  }
+  .blook:hover{background:var(--surface-3);border-color:var(--line-strong)}
+  .blook.is-picked{
+    border-color:var(--accent);
+    background:var(--accent-soft);
+  }
+  .blook-dot{
+    width:10px;height:10px;border-radius:50%;flex:0 0 auto;
+    background:var(--c, var(--muted));
+    box-shadow:0 0 0 2px var(--surface);
+  }
+  .blook span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .blook small{color:var(--muted);font-size:10px;flex:0 0 auto}
+
+  .picker-foot{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:10px;padding:10px 13px;
+    border-top:1px solid var(--line);background:var(--surface-2);
+    flex-wrap:wrap;
+  }
+  .picker-foot span{font-size:11.5px;color:var(--muted)}
+  .picker-foot strong{color:var(--txt);font-weight:650}
+
+  /* ---------------- command list ---------------- */
   .commands{
-    background:var(--surface);
-    border:1px solid var(--line);border-radius:var(--radius);
-    overflow:hidden;
+    background:var(--surface);border:1px solid var(--line);
+    border-radius:var(--radius);overflow:hidden;
   }
 
   .command{
     display:grid;
-    grid-template-columns:minmax(180px,1fr) minmax(0,2.2fr);
-    align-items:center;
-    gap:18px;
-    padding:14px 18px;
+    grid-template-columns:minmax(150px,1fr) minmax(0,2.2fr);
+    align-items:center;gap:14px;
+    padding:10px 14px;
     border-bottom:1px solid var(--line);
     transition:background .15s ease;
   }
@@ -408,20 +441,16 @@
   .command:hover{background:var(--surface-2)}
 
   .command-info strong{
-    display:block;font-size:13px;font-weight:650;letter-spacing:-.1px;
+    display:block;font-size:12px;font-weight:650;letter-spacing:-.1px;
   }
   .command-info small{
-    display:block;font-size:11.5px;color:var(--muted);margin-top:2px;
-    line-height:1.5;
+    display:block;font-size:10.5px;color:var(--muted);margin-top:1px;
+    line-height:1.4;
   }
 
-  .command-inputs{
-    display:flex;gap:8px;flex-wrap:wrap;align-items:center;
-  }
-  .command-inputs input{
-    flex:1 1 130px;min-width:0;
-  }
-  .command-inputs button{flex:0 0 auto}
+  .command-inputs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+  .command-inputs input{flex:1 1 110px;min-width:0}
+  .command-inputs button{flex:0 0 auto;padding:7px 12px}
 
   /* ---------------- console ---------------- */
   .console{
@@ -431,29 +460,27 @@
 
   .console-bar{
     display:flex;align-items:center;justify-content:space-between;
-    gap:14px;flex-wrap:wrap;
-    padding:11px 15px;background:var(--surface);border-bottom:1px solid var(--line);
+    gap:10px;flex-wrap:wrap;
+    padding:9px 12px;background:var(--surface);border-bottom:1px solid var(--line);
   }
-  .console-bar h3{font-size:12.5px;font-weight:650}
+  .console-bar h3{font-size:11.5px;font-weight:650}
 
-  .console-tools{
-    display:flex;align-items:center;gap:10px;flex-wrap:wrap;
-  }
+  .console-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 
   .console-search{
     background:var(--surface-3);border:1px solid var(--line);
-    border-radius:999px;padding:6px 13px;color:var(--txt);
-    font-family:inherit;font-size:11.5px;outline:none;
-    width:150px;transition:border-color .15s ease,box-shadow .15s ease;
+    border-radius:999px;padding:5px 11px;color:var(--txt);
+    font-family:inherit;font-size:11px;outline:none;
+    width:130px;transition:border-color .15s ease,box-shadow .15s ease;
   }
   .console-search:focus{
     border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);
   }
 
-  .chips{display:flex;gap:6px;flex-wrap:wrap}
+  .chips{display:flex;gap:4px;flex-wrap:wrap}
 
   .chip{
-    font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;
+    font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:999px;
     background:transparent;border:1px solid var(--line);color:var(--muted);
   }
   .chip:hover{background:var(--surface-2);color:var(--txt)}
@@ -462,85 +489,62 @@
   }
 
   .console-body{
-    padding:15px;font-family:var(--mono);font-size:12px;line-height:1.95;
-    max-height:260px;overflow-y:auto;
+    padding:11px 13px;font-family:var(--mono);font-size:11.5px;line-height:1.8;
+    max-height:220px;overflow-y:auto;
   }
   .console-body p{color:var(--muted);white-space:pre-wrap;word-break:break-word}
-  .console-body .t{color:var(--dim);margin-right:10px}
-  .console-body .tag{margin-right:8px;font-weight:600}
+  .console-body .t{color:var(--dim);margin-right:8px}
+  .console-body .tag{margin-right:6px;font-weight:600}
   .console-body .ok{color:var(--green)}
   .console-body .warn{color:var(--amber)}
   .console-body .err{color:var(--red)}
   .console-body .info{color:var(--accent)}
 
-  .console-body::-webkit-scrollbar{width:10px}
+  .console-body::-webkit-scrollbar{width:8px}
   .console-body::-webkit-scrollbar-thumb{
-    background:var(--line);border-radius:999px;border:3px solid var(--surface-3);
+    background:var(--line);border-radius:999px;border:2px solid var(--surface-3);
   }
 
   footer.page-foot{
-    text-align:center;font-size:11.5px;color:var(--dim);
-    padding-top:8px;
+    text-align:center;font-size:10.5px;color:var(--dim);padding-top:4px;
   }
 
-  /* ---------------- toast stack ---------------- */
+  /* ---------------- toasts ---------------- */
   .toast-stack{
-    position:fixed;top:22px;right:22px;z-index:120;
-    display:flex;flex-direction:column;gap:10px;
-    max-width:340px;width:calc(100% - 44px);
+    position:fixed;top:16px;right:16px;z-index:120;
+    display:flex;flex-direction:column;gap:8px;
+    max-width:300px;width:calc(100% - 32px);
     pointer-events:none;
   }
-
   .toast{
     pointer-events:auto;
-    background:var(--surface);
-    border:1px solid var(--line);
+    background:var(--surface);border:1px solid var(--line);
     border-left:3px solid var(--accent);
     border-radius:var(--radius-sm);
-    padding:12px 15px;
-    font-size:12.5px;line-height:1.5;
+    padding:9px 12px;font-size:11.5px;line-height:1.45;
     box-shadow:var(--shadow);
     animation:toastIn .22s ease;
   }
   .toast.ok  {border-left-color:var(--green)}
   .toast.warn{border-left-color:var(--amber)}
   .toast.err {border-left-color:var(--red)}
-  .toast strong{display:block;font-size:12px;font-weight:700;margin-bottom:3px}
+  .toast strong{display:block;font-size:11.5px;font-weight:700;margin-bottom:2px}
   .toast span{color:var(--muted)}
-
   @keyframes toastIn{
-    from{opacity:0;transform:translateX(24px)}
+    from{opacity:0;transform:translateX(20px)}
     to{opacity:1;transform:none}
   }
 
   /* ---------------- responsive ---------------- */
-  @media (max-width:1024px){
-    .shell{grid-template-columns:1fr;gap:24px;padding:22px 18px 60px}
-    .sidebar{
-      position:static;flex-direction:row;align-items:center;
-      gap:18px;flex-wrap:wrap;
-      border-bottom:1px solid var(--line);padding-bottom:18px;
-    }
-    .nav{flex-direction:row;overflow-x:auto;gap:4px;flex:1;
-      scrollbar-width:none;-ms-overflow-style:none}
-    .nav::-webkit-scrollbar{display:none}
-    .nav a{white-space:nowrap;padding:7px 12px;background:var(--surface-2)}
-    .nav a::before{display:none}
-    .side-note{display:none}
-  }
-
   @media (max-width:640px){
-    .command{grid-template-columns:1fr;gap:10px}
+    .shell{padding:14px 12px 40px;gap:16px}
+    .topbar{position:static;padding:9px 11px;gap:10px}
+    .brand p{display:none}
+    .command{grid-template-columns:1fr;gap:8px;padding:11px 12px}
     .command-inputs input{flex:1 1 100%}
     .command-inputs button{flex:1 1 100%}
-  }
-
-  @media (max-width:520px){
-    .shell{padding:18px 14px 48px}
-    .grid{grid-template-columns:1fr}
     .stats{grid-template-columns:repeat(2,1fr)}
-    .actions button{flex:1 1 auto}
-    .toast-stack{top:14px;right:14px;width:calc(100% - 28px)}
+    .toast-stack{top:10px;right:10px;width:calc(100% - 20px)}
   }
 
   @media (prefers-reduced-motion:reduce){
@@ -554,42 +558,32 @@
 <input type="checkbox" id="theme-toggle" class="sr-only" aria-label="Toggle color theme" />
 <a class="skip" href="#main">Skip to content</a>
 
-<!-- Toast stack — engine pushes notifications here -->
 <div class="toast-stack" data-role="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
 <div class="shell">
 
-  <!-- ============ SIDEBAR ============ -->
-  <aside class="sidebar">
+  <!-- ============ TOPBAR ============ -->
+  <header class="topbar">
     <div class="brand">
       <div class="logo">B</div>
       <div>
         <h1>Blooket Panel</h1>
-        <p>Local client dashboard</p>
+        <p>Match control</p>
       </div>
     </div>
 
     <nav class="nav" aria-label="Sections">
-      <a href="#overview">Overview</a>
+      <a href="#join">Join</a>
+      <a href="#blooks">Blooks</a>
       <a href="#overrides">Overrides</a>
       <a href="#gameplay">Gameplay</a>
-      <a href="#account">Account</a>
-      <a href="#connection">Connection</a>
       <a href="#console">Console</a>
     </nav>
 
-    <div class="side-note">
-      Runs entirely in this page. Nothing is sent anywhere until a module is armed.
-    </div>
-  </aside>
-
-  <!-- ============ MAIN ============ -->
-  <main class="main" id="main">
-
-    <div class="topbar" id="overview">
+    <div class="topbar-right">
       <div class="pill">
         <span class="dot live"></span>
-        <span data-role="status">Disconnected — no game attached</span>
+        <span data-role="status">Not in a game</span>
       </div>
 
       <label class="theme-toggle" for="theme-toggle" title="Toggle theme">
@@ -597,21 +591,124 @@
         <span class="sr-only">Toggle color theme</span>
       </label>
     </div>
+  </header>
+
+  <main class="main" id="main" style="display:flex;flex-direction:column;gap:20px">
 
     <!-- ---- stats ---- -->
-    <section class="stats" aria-label="Session statistics">
-      <div class="stat"><span>Tokens</span><strong data-stat="tokens">0</strong></div>
-      <div class="stat"><span>XP</span><strong data-stat="xp">0</strong></div>
-      <div class="stat"><span>Blooks Owned</span><strong data-stat="blooks">0 / 0</strong></div>
-      <div class="stat"><span>Session Uptime</span><strong data-stat="uptime">00:00:00</strong></div>
+    <section class="stats" aria-label="Match statistics">
+      <div class="stat"><span>Score</span><strong data-stat="score">0</strong></div>
+      <div class="stat"><span>Rank</span><strong data-stat="rank">—</strong></div>
+      <div class="stat"><span>Question</span><strong data-stat="question">—</strong></div>
+      <div class="stat"><span>Session</span><strong data-stat="uptime">00:00:00</strong></div>
+    </section>
+
+    <!-- ============ JOIN ============ -->
+    <section id="join">
+      <p class="sec-title">Join Match</p>
+
+      <div class="grid">
+
+        <article class="card" data-module="join">
+          <header class="card-head">
+            <div class="icon" aria-hidden="true">⇥</div>
+            <div class="card-title">
+              <h3>Join as Identity</h3>
+              <p>Synthetic name + chosen blook</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <div class="fields">
+            <div class="field-row">
+              <div>
+                <label class="field-label" for="join-name">Display name</label>
+                <input id="join-name" type="text" placeholder="anything" data-field="name" />
+              </div>
+              <div>
+                <label class="field-label" for="join-pin">Game PIN</label>
+                <input id="join-pin" type="text" inputmode="numeric" placeholder="000000" data-field="pin" />
+              </div>
+            </div>
+
+            <div>
+              <label class="field-label" for="join-blook">Blook</label>
+              <input id="join-blook" type="text" placeholder="picked from list below" data-field="blook" readonly />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="join">Join Game</button>
+            <button class="btn-ghost" data-action="leave">Leave</button>
+          </div>
+        </article>
+
+        <article class="card" data-module="identity">
+          <header class="card-head">
+            <div class="icon p" aria-hidden="true">✦</div>
+            <div class="card-title">
+              <h3>Identity Generator</h3>
+              <p>Random name, ready to drop in</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <p class="card-body">
+            Produces a throwaway display name. Combine with any blook from the picker.
+          </p>
+
+          <div class="fields">
+            <div>
+              <label class="field-label" for="id-pattern">Pattern</label>
+              <select id="id-pattern" data-field="pattern">
+                <option value="word+num">Word + number</option>
+                <option value="leetword">Leet word</option>
+                <option value="short">Short gibberish</option>
+              </select>
+            </div>
+            <div>
+              <label class="field-label" for="id-out">Output</label>
+              <input id="id-out" type="text" placeholder="—" data-field="output" readonly />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="generate">Generate</button>
+            <button class="btn-ghost" data-action="use-identity">Use Name</button>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ BLOOK PICKER ============ -->
+    <section id="blooks">
+      <p class="sec-title">Blook Picker</p>
+      <p class="sec-hint">
+        Full catalog — event, chromatic, rare, whatever. Pick one and it becomes your join identity.
+      </p>
+
+      <div class="picker">
+        <div class="picker-bar">
+          <input type="search" data-field="blookSearch" placeholder="Search blooks…" aria-label="Search blooks" />
+          <button class="btn-ghost" data-action="load-blooks">Load Catalog</button>
+        </div>
+
+        <div class="blook-grid" data-role="blook-grid" role="listbox" aria-label="Blook catalog"></div>
+
+        <div class="picker-foot">
+          <span>Selected: <strong data-role="blook-selected">none</strong></span>
+          <button class="btn-primary" data-action="use-blook">Use Blook</button>
+        </div>
+      </div>
     </section>
 
     <!-- ============ LIVE OVERRIDES ============ -->
     <section id="overrides">
       <p class="sec-title">Live Overrides</p>
       <p class="sec-hint">
-        Type anything into the value box — numbers, text, whatever — then hit Go.
-        Leave the player field blank to target yourself.
+        Type anything into a value box — numbers, text, whatever — then hit Go.
+        Leave a player field blank to target yourself.
       </p>
 
       <div class="commands">
@@ -619,7 +716,7 @@
         <div class="command" data-module="cmd-score">
           <div class="command-info">
             <strong>Change Score</strong>
-            <small>Set a player's score to any value</small>
+            <small>Set any player's score to any value</small>
           </div>
           <div class="command-inputs">
             <input type="text" data-field="target" placeholder="player (blank = you)" />
@@ -631,54 +728,10 @@
         <div class="command" data-module="cmd-name">
           <div class="command-info">
             <strong>Change Name</strong>
-            <small>Rename yourself in the current game</small>
+            <small>Rename yourself mid-match</small>
           </div>
           <div class="command-inputs">
             <input type="text" data-field="value" placeholder="new name" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-tokens">
-          <div class="command-info">
-            <strong>Set Tokens</strong>
-            <small>Overwrite your token balance exactly</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="exact amount" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-xp">
-          <div class="command-info">
-            <strong>Set XP</strong>
-            <small>Overwrite your XP total exactly</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="exact amount" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-level">
-          <div class="command-info">
-            <strong>Set Level</strong>
-            <small>Jump your account level to any number</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="level" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-blook">
-          <div class="command-info">
-            <strong>Equip Blook</strong>
-            <small>Swap your active blook by name or ID</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="blook name or id" />
             <button class="btn-primary" data-action="go">Go</button>
           </div>
         </div>
@@ -697,7 +750,7 @@
         <div class="command" data-module="cmd-currency">
           <div class="command-info">
             <strong>Set In-Game Currency</strong>
-            <small>Gold, crypto, fossils — depends on the mode</small>
+            <small>Gold, crypto, fossils — mode dependent</small>
           </div>
           <div class="command-inputs">
             <input type="text" data-field="target" placeholder="player (blank = you)" />
@@ -706,14 +759,46 @@
           </div>
         </div>
 
+        <div class="command" data-module="cmd-blook">
+          <div class="command-info">
+            <strong>Swap Blook In-Game</strong>
+            <small>Change your visible blook on the fly</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="blook name or id" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
         <div class="command" data-module="cmd-kick">
           <div class="command-info">
             <strong>Kick Player</strong>
-            <small>Remove a player from the current game</small>
+            <small>Remove a player from the match</small>
           </div>
           <div class="command-inputs">
             <input type="text" data-field="target" placeholder="player name" />
             <button class="btn-danger" data-action="go">Kick</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-time">
+          <div class="command-info">
+            <strong>Set Timer</strong>
+            <small>Override the round countdown, in seconds</small>
+          </div>
+          <div class="command-inputs">
+            <input type="text" data-field="value" placeholder="seconds" />
+            <button class="btn-primary" data-action="go">Go</button>
+          </div>
+        </div>
+
+        <div class="command" data-module="cmd-force">
+          <div class="command-info">
+            <strong>Force End Round</strong>
+            <small>Skip straight to the results screen</small>
+          </div>
+          <div class="command-inputs">
+            <button class="btn-danger" data-action="go">Force</button>
           </div>
         </div>
 
@@ -734,12 +819,6 @@
             </div>
             <span class="badge" data-role="state">Idle</span>
           </header>
-
-          <p class="card-body">
-            Reads the active question from page state and submits the correct answer automatically.
-          </p>
-
-          <hr class="divider" />
 
           <div class="toggles">
             <label class="toggle">
@@ -771,12 +850,6 @@
             <span class="badge" data-role="state">Idle</span>
           </header>
 
-          <p class="card-body">
-            Answers, buys upgrades, and targets the objective on a fixed loop until the game ends.
-          </p>
-
-          <hr class="divider" />
-
           <div class="fields">
             <div>
               <label class="field-label" for="bot-strategy">Strategy</label>
@@ -788,25 +861,18 @@
             </div>
             <div class="field-row">
               <div>
-                <label class="field-label" for="bot-min">Min delay (ms)</label>
+                <label class="field-label" for="bot-min">Min (ms)</label>
                 <input id="bot-min" type="number" min="0" step="10" value="180" data-field="delayMin" />
               </div>
               <div>
-                <label class="field-label" for="bot-max">Max delay (ms)</label>
+                <label class="field-label" for="bot-max">Max (ms)</label>
                 <input id="bot-max" type="number" min="0" step="10" value="420" data-field="delayMax" />
               </div>
             </div>
           </div>
 
-          <div class="toggles">
-            <label class="toggle">
-              <span>Auto-buy upgrades</span>
-              <input type="checkbox" class="switch" role="switch" data-field="autoBuy" checked />
-            </label>
-          </div>
-
           <div class="actions">
-            <button class="btn-primary" data-action="deploy">Deploy Bot</button>
+            <button class="btn-primary" data-action="deploy">Deploy</button>
             <button class="btn-ghost" data-action="recall">Recall</button>
           </div>
         </article>
@@ -816,25 +882,19 @@
             <div class="icon r" aria-hidden="true">⟳</div>
             <div class="card-title">
               <h3>Grind Loop</h3>
-              <p>Unattended token farming</p>
+              <p>Unattended match farming</p>
             </div>
             <span class="badge" data-role="state">Idle</span>
           </header>
 
-          <p class="card-body">
-            Joins, plays, and exits matches on repeat. Runs while you're away from the keyboard.
-          </p>
-
-          <hr class="divider" />
-
           <div class="fields">
             <div class="field-row">
               <div>
-                <label class="field-label" for="grind-games">Games per cycle</label>
+                <label class="field-label" for="grind-games">Games / cycle</label>
                 <input id="grind-games" type="number" min="1" value="10" data-field="gamesPerCycle" />
               </div>
               <div>
-                <label class="field-label" for="grind-cooldown">Cooldown (sec)</label>
+                <label class="field-label" for="grind-cooldown">Cooldown (s)</label>
                 <input id="grind-cooldown" type="number" min="0" value="5" data-field="cooldown" />
               </div>
             </div>
@@ -856,134 +916,6 @@
       </div>
     </section>
 
-    <!-- ============ ACCOUNT ============ -->
-    <section id="account">
-      <p class="sec-title">Account</p>
-      <div class="grid">
-
-        <article class="card" data-module="rewards">
-          <header class="card-head">
-            <div class="icon g" aria-hidden="true">◎</div>
-            <div class="card-title">
-              <h3>Gold &amp; XP</h3>
-              <p>Direct account reward injection</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
-
-          <p class="card-body">
-            Sends reward payloads straight to the account endpoint. Bypasses the match entirely.
-          </p>
-
-          <hr class="divider" />
-
-          <div class="fields">
-            <div class="field-row">
-              <div>
-                <label class="field-label" for="rw-tokens">Tokens</label>
-                <input id="rw-tokens" type="number" min="0" value="500" data-field="tokens" />
-              </div>
-              <div>
-                <label class="field-label" for="rw-xp">XP</label>
-                <input id="rw-xp" type="number" min="0" value="300" data-field="xp" />
-              </div>
-            </div>
-          </div>
-
-          <div class="toggles">
-            <label class="toggle">
-              <span>Repeat on interval</span>
-              <input type="checkbox" class="switch" role="switch" data-field="loop" />
-            </label>
-          </div>
-
-          <div class="actions">
-            <button class="btn-primary" data-action="apply">Apply Once</button>
-            <button class="btn-ghost" data-action="loop">Loop</button>
-          </div>
-        </article>
-
-        <article class="card" data-module="blooks">
-          <header class="card-head">
-            <div class="icon a" aria-hidden="true">✦</div>
-            <div class="card-title">
-              <h3>Unlock Blooks</h3>
-              <p>Open the full collection</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
-
-          <p class="card-body">
-            Unlocks every blook in the catalog and optionally auto-sells duplicates for tokens.
-          </p>
-
-          <hr class="divider" />
-
-          <div class="toggles">
-            <label class="toggle">
-              <span>Auto-sell duplicates</span>
-              <input type="checkbox" class="switch" role="switch" data-field="autoSell" checked />
-            </label>
-            <label class="toggle">
-              <span>Include event blooks</span>
-              <input type="checkbox" class="switch" role="switch" data-field="includeEvent" />
-            </label>
-            <label class="toggle">
-              <span>Include chromatic variants</span>
-              <input type="checkbox" class="switch" role="switch" data-field="includeChromatic" />
-            </label>
-          </div>
-
-          <div class="actions">
-            <button class="btn-primary" data-action="unlock">Unlock All</button>
-            <button class="btn-danger" data-action="reset">Reset Collection</button>
-          </div>
-        </article>
-
-      </div>
-    </section>
-
-    <!-- ============ CONNECTION ============ -->
-    <section id="connection">
-      <p class="sec-title">Connection</p>
-      <div class="grid">
-
-        <article class="card" data-module="session">
-          <header class="card-head">
-            <div class="icon" aria-hidden="true">⚙</div>
-            <div class="card-title">
-              <h3>Session</h3>
-              <p>Target and attach</p>
-            </div>
-            <span class="badge" data-role="state">Detached</span>
-          </header>
-
-          <p class="card-body">
-            Point the panel at a live match or attach to a standalone account session.
-          </p>
-
-          <hr class="divider" />
-
-          <div class="fields">
-            <div>
-              <label class="field-label" for="ses-pin">Game PIN</label>
-              <input id="ses-pin" type="text" inputmode="numeric" placeholder="000000" data-field="pin" />
-            </div>
-            <div>
-              <label class="field-label" for="ses-account">Account name</label>
-              <input id="ses-account" type="text" placeholder="username" data-field="account" />
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn-primary" data-action="attach">Attach</button>
-            <button class="btn-ghost" data-action="detach">Detach</button>
-          </div>
-        </article>
-
-      </div>
-    </section>
-
     <!-- ============ CONSOLE ============ -->
     <section id="console">
       <p class="sec-title">Activity Log</p>
@@ -992,7 +924,7 @@
         <div class="console-bar">
           <h3>Console</h3>
           <div class="console-tools">
-            <input type="search" class="console-search" data-field="search" placeholder="Search log…" aria-label="Search log" />
+            <input type="search" class="console-search" data-field="search" placeholder="Search…" aria-label="Search log" />
             <div class="chips" role="group" aria-label="Log filter">
               <button class="chip is-active" data-action="filter" data-filter="all">All</button>
               <button class="chip" data-action="filter" data-filter="info">Info</button>
@@ -1005,8 +937,7 @@
         </div>
 
         <div class="console-body" data-role="log" role="log" aria-live="polite" aria-label="Activity log">
-          <p><span class="t">00:00:00</span><span class="tag info">[panel]</span>Dashboard loaded — standby.</p>
-          <p><span class="t">00:00:00</span><span class="tag warn">[panel]</span>No game attached.</p>
+          <p><span class="t">00:00:00</span><span class="tag info">[panel]</span>Ready.</p>
         </div>
       </div>
     </section>
@@ -1016,9 +947,7 @@
   </main>
 </div>
 
-<!-- ============ CANONICAL MODULE TEMPLATE ============
-     Clone this, set data-module + labels, register a handler in engine.js.
--->
+<!-- ============ MODULE TEMPLATE ============ -->
 <template id="module-template">
   <article class="card" data-module="MODULE_ID">
     <header class="card-head">
@@ -1029,25 +958,12 @@
       </div>
       <span class="badge" data-role="state">Idle</span>
     </header>
-
-    <p class="card-body">What this module does.</p>
-
-    <hr class="divider" />
-
-    <div class="toggles">
-      <label class="toggle">
-        <span>Enabled</span>
-        <input type="checkbox" class="switch" role="switch" data-field="enabled" />
-      </label>
-    </div>
-
     <div class="fields">
       <div>
         <label class="field-label" for="MODULE_ID-value">Value</label>
-        <input id="MODULE_ID-value" type="number" value="0" data-field="value" />
+        <input id="MODULE_ID-value" type="text" data-field="value" />
       </div>
     </div>
-
     <div class="actions">
       <button class="btn-primary" data-action="start">Start</button>
       <button class="btn-ghost" data-action="stop">Stop</button>
@@ -1055,9 +971,7 @@
   </article>
 </template>
 
-<!-- ============ COMMAND ROW TEMPLATE ============
-     Clone for new [data-action="go"] overrides.
--->
+<!-- ============ COMMAND ROW TEMPLATE ============ -->
 <template id="command-template">
   <div class="command" data-module="cmd-ID">
     <div class="command-info">
@@ -1065,7 +979,6 @@
       <small>What it does.</small>
     </div>
     <div class="command-inputs">
-      <input type="text" data-field="target" placeholder="player (blank = you)" />
       <input type="text" data-field="value" placeholder="value" />
       <button class="btn-primary" data-action="go">Go</button>
     </div>
