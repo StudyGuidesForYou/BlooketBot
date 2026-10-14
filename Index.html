@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Blooket Control Panel</title>
+
+<!--
+  WIRING CONTRACT — every hook the future logic will need is already in the DOM.
+  Add or rewire modules without touching CSS or structure.
+
+    [data-module="id"]        module root (card)
+    [data-action="verb"]      any button/chip — start, stop, apply, deploy, kill…
+    [data-field="name"]       any input/toggle/select
+    [data-role="state"]       per-module status badge
+    [data-role="status"]      global connection pill
+    [data-role="log"]         log container (role="log", aria-live)
+    [data-stat="key"]         stat value slot — tokens, xp, blooks, uptime
+    [data-filter="key"]       log filter chips
+
+  Canonical card markup lives in <template id="module-template"> at the bottom.
+  Clone it, set data-module + labels, done.
+-->
+
+<style>
+  :root{
+    color-scheme: dark;
+    --bg:#0b0e14;
+    --surface:#121722;
+    --surface-2:#171d2b;
+    --surface-3:#0d121c;
+    --line:#232c3d;
+    --line-strong:#33415c;
+    --txt:#e6ebf5;
+    --muted:#7d8899;
+    --dim:#4a5568;
+    --accent:#4f8cff;
+    --accent-2:#7c5cff;
+    --accent-soft:rgba(79,140,255,.14);
+    --accent-ring:rgba(79,140,255,.35);
+    --green:#2fd07a;
+    --amber:#ffb020;
+    --red:#ff4d5e;
+    --green-soft:rgba(47,208,122,.14);
+    --amber-soft:rgba(255,176,32,.14);
+    --red-soft:rgba(255,77,94,.14);
+    --glow-a:#1b2440;
+    --glow-b:#2a1d45;
+    --shadow:0 10px 30px rgba(0,0,0,.35);
+    --radius:16px;
+    --radius-sm:10px;
+    --sans:"Segoe UI",Inter,system-ui,-apple-system,sans-serif;
+    --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,Monaco,monospace;
+  }
+
+  body:has(#theme-toggle:checked){
+    color-scheme: light;
+    --bg:#f3f5fa;
+    --surface:#ffffff;
+    --surface-2:#f8fafd;
+    --surface-3:#ffffff;
+    --line:#e3e9f2;
+    --line-strong:#c8d4e6;
+    --txt:#111726;
+    --muted:#65718a;
+    --dim:#9aa5b8;
+    --accent:#3b7bff;
+    --accent-2:#6b4cff;
+    --accent-soft:rgba(59,123,255,.12);
+    --accent-ring:rgba(59,123,255,.30);
+    --green:#0f9d58;
+    --amber:#b8730a;
+    --red:#dc3545;
+    --green-soft:rgba(15,157,88,.12);
+    --amber-soft:rgba(184,115,10,.12);
+    --red-soft:rgba(220,53,69,.12);
+    --glow-a:#dfe8ff;
+    --glow-b:#ece2ff;
+    --shadow:0 10px 30px rgba(20,40,80,.08);
+  }
+
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+  html{scroll-behavior:smooth}
+
+  body{
+    background:
+      radial-gradient(1200px 600px at 12% -12%, var(--glow-a) 0%, transparent 62%),
+      radial-gradient(900px 520px at 100% 0%, var(--glow-b) 0%, transparent 58%),
+      var(--bg);
+    background-attachment:fixed;
+    color:var(--txt);
+    font-family:var(--sans);
+    font-size:14px;
+    line-height:1.5;
+    min-height:100vh;
+    -webkit-font-smoothing:antialiased;
+  }
+
+  .sr-only{
+    position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+  }
+
+  .skip{
+    position:absolute;left:16px;top:-60px;z-index:99;
+    background:var(--accent);color:#fff;padding:10px 16px;
+    border-radius:var(--radius-sm);font-weight:600;text-decoration:none;
+    transition:top .18s ease;
+  }
+  .skip:focus{top:16px}
+
+  /* ---------------- shell ---------------- */
+  .shell{
+    max-width:1240px;margin:0 auto;padding:28px 22px 72px;
+    display:grid;grid-template-columns:224px minmax(0,1fr);gap:30px;
+  }
+
+  /* ---------------- sidebar ---------------- */
+  .sidebar{
+    position:sticky;top:28px;align-self:start;
+    display:flex;flex-direction:column;gap:22px;
+  }
+
+  .brand{display:flex;align-items:center;gap:12px}
+
+  .logo{
+    width:44px;height:44px;border-radius:13px;flex:0 0 auto;
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    display:grid;place-items:center;
+    font-weight:800;font-size:19px;color:#fff;
+    box-shadow:0 8px 22px var(--accent-ring);
+  }
+
+  .brand h1{font-size:15.5px;font-weight:700;letter-spacing:-.2px}
+  .brand p{font-size:11.5px;color:var(--muted)}
+
+  .nav{display:flex;flex-direction:column;gap:2px}
+
+  .nav a{
+    display:flex;align-items:center;gap:10px;
+    padding:9px 12px;border-radius:var(--radius-sm);
+    color:var(--muted);text-decoration:none;font-size:13px;font-weight:500;
+    transition:background .15s ease,color .15s ease;
+  }
+  .nav a:hover{background:var(--surface-2);color:var(--txt)}
+  .nav a:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  .nav a::before{
+    content:"";width:6px;height:6px;border-radius:50%;
+    background:currentColor;opacity:.45;flex:0 0 auto;
+  }
+
+  .side-note{
+    font-size:11.5px;color:var(--dim);line-height:1.7;
+    border-top:1px solid var(--line);padding-top:16px;
+  }
+
+  /* ---------------- main ---------------- */
+  .main{display:flex;flex-direction:column;gap:34px;min-width:0}
+
+  .topbar{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:16px;flex-wrap:wrap;
+  }
+
+  .pill{
+    display:inline-flex;align-items:center;gap:9px;
+    background:var(--surface);border:1px solid var(--line);
+    padding:8px 15px;border-radius:999px;
+    font-size:12.5px;color:var(--muted);
+    box-shadow:var(--shadow);
+  }
+
+  .dot{
+    width:8px;height:8px;border-radius:50%;
+    background:var(--muted);flex:0 0 auto;
+  }
+  .dot.live{background:var(--green);animation:pulse 2s infinite}
+  @keyframes pulse{
+    0%{box-shadow:0 0 0 0 var(--green-soft)}
+    70%{box-shadow:0 0 0 9px transparent}
+    100%{box-shadow:0 0 0 0 transparent}
+  }
+
+  .theme-toggle{
+    display:grid;place-items:center;
+    width:38px;height:38px;border-radius:var(--radius-sm);
+    background:var(--surface);border:1px solid var(--line);
+    cursor:pointer;color:var(--muted);font-size:16px;
+    transition:background .15s ease,color .15s ease,border-color .15s ease;
+  }
+  .theme-toggle:hover{background:var(--surface-2);color:var(--txt);border-color:var(--line-strong)}
+  .theme-toggle:has(input:focus-visible){outline:2px solid var(--accent);outline-offset:2px}
+  .theme-toggle span::before{content:"☾"}
+  body:has(#theme-toggle:checked) .theme-toggle span::before{content:"☀"}
+
+  /* ---------------- stats ---------------- */
+  .stats{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));
+    gap:14px;
+  }
+
+  .stat{
+    background:linear-gradient(180deg,var(--surface-2),var(--surface));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:15px 17px;position:relative;overflow:hidden;
+  }
+  .stat::after{
+    content:"";position:absolute;inset:0 auto 0 0;width:2px;
+    background:linear-gradient(180deg,var(--accent),var(--accent-2));
+    opacity:.7;
+  }
+  .stat span{
+    display:block;font-size:11px;text-transform:uppercase;
+    letter-spacing:.9px;color:var(--muted);margin-bottom:7px;
+  }
+  .stat strong{
+    font-size:21px;font-weight:700;letter-spacing:-.5px;
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ---------------- sections ---------------- */
+  section{scroll-margin-top:24px}
+
+  .sec-title{
+    display:flex;align-items:center;gap:12px;
+    font-size:11.5px;text-transform:uppercase;letter-spacing:1.4px;
+    color:var(--muted);font-weight:600;margin-bottom:15px;
+  }
+  .sec-title::after{
+    content:"";flex:1;height:1px;background:var(--line);
+  }
+
+  .grid{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));
+    gap:16px;
+  }
+
+  /* ---------------- card ---------------- */
+  .card{
+    background:linear-gradient(180deg,var(--surface-2),var(--surface));
+    border:1px solid var(--line);border-radius:var(--radius);
+    padding:19px;display:flex;flex-direction:column;gap:15px;
+    transition:border-color .18s ease,transform .18s ease,box-shadow .18s ease;
+  }
+  .card:hover{
+    border-color:var(--line-strong);
+    transform:translateY(-2px);
+    box-shadow:var(--shadow);
+  }
+
+  .card-head{display:flex;align-items:flex-start;gap:12px}
+
+  .icon{
+    width:38px;height:38px;border-radius:11px;flex:0 0 auto;
+    display:grid;place-items:center;font-size:16px;
+    background:var(--accent-soft);border:1px solid var(--accent-ring);
+    color:var(--accent);
+  }
+  .icon.g{background:var(--green-soft);border-color:transparent;color:var(--green)}
+  .icon.a{background:var(--amber-soft);border-color:transparent;color:var(--amber)}
+  .icon.p{background:rgba(124,92,255,.14);border-color:transparent;color:var(--accent-2)}
+  .icon.r{background:var(--red-soft);border-color:transparent;color:var(--red)}
+
+  .card-title{flex:1;min-width:0}
+  .card-title h3{font-size:14px;font-weight:650;letter-spacing:-.1px}
+  .card-title p{font-size:11.5px;color:var(--muted);margin-top:2px}
+
+  .badge{
+    flex:0 0 auto;font-size:10.5px;font-weight:700;
+    letter-spacing:.7px;text-transform:uppercase;
+    padding:4px 9px;border-radius:999px;
+    background:var(--surface-3);border:1px solid var(--line);color:var(--muted);
+  }
+  .badge.live{background:var(--green-soft);border-color:transparent;color:var(--green)}
+  .badge.warn{background:var(--amber-soft);border-color:transparent;color:var(--amber)}
+  .badge.err{background:var(--red-soft);border-color:transparent;color:var(--red)}
+
+  .card-body{font-size:12.5px;color:var(--muted);line-height:1.62}
+
+  .divider{height:1px;background:var(--line);border:0}
+
+  .fields{display:flex;flex-direction:column;gap:13px}
+  .field-row{display:flex;gap:12px;flex-wrap:wrap}
+  .field-row > *{flex:1 1 130px;min-width:0}
+
+  label.field-label{
+    display:block;font-size:11px;color:var(--muted);
+    margin-bottom:6px;letter-spacing:.4px;
+  }
+
+  input[type=text],input[type=number],select{
+    width:100%;background:var(--surface-3);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:9px 12px;color:var(--txt);
+    font-family:inherit;font-size:12.5px;outline:none;
+    transition:border-color .15s ease,box-shadow .15s ease;
+  }
+  input::placeholder{color:var(--dim)}
+  input:focus,select:focus{
+    border-color:var(--accent);
+    box-shadow:0 0 0 3px var(--accent-soft);
+  }
+  select{cursor:pointer;appearance:none;
+    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
+                     linear-gradient(135deg,var(--muted) 50%,transparent 50%);
+    background-position:calc(100% - 17px) 50%,calc(100% - 12px) 50%;
+    background-size:5px 5px,5px 5px;background-repeat:no-repeat;
+    padding-right:34px;
+  }
+
+  /* ---------------- toggles ---------------- */
+  .toggles{display:flex;flex-direction:column}
+
+  .toggle{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:14px;padding:10px 0;cursor:pointer;
+    border-bottom:1px solid var(--line);
+  }
+  .toggle:last-child{border-bottom:none}
+  .toggle span{font-size:12.5px;color:var(--txt)}
+
+  .switch{
+    appearance:none;-webkit-appearance:none;
+    width:42px;height:24px;border-radius:999px;flex:0 0 auto;
+    background:var(--line);border:1px solid var(--line);
+    position:relative;cursor:pointer;margin:0;
+    transition:background .18s ease,border-color .18s ease;
+  }
+  .switch::after{
+    content:"";position:absolute;top:2px;left:2px;
+    width:18px;height:18px;border-radius:50%;
+    background:var(--muted);
+    transition:transform .18s ease,background .18s ease;
+  }
+  .switch:checked{background:var(--accent-soft);border-color:var(--accent)}
+  .switch:checked::after{transform:translateX(18px);background:var(--accent)}
+  .switch:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  /* ---------------- buttons ---------------- */
+  .actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:auto}
+
+  button{
+    font-family:inherit;font-size:12.5px;font-weight:600;
+    border-radius:var(--radius-sm);padding:9px 16px;cursor:pointer;
+    border:1px solid var(--line);background:var(--surface-3);color:var(--txt);
+    transition:background .15s ease,border-color .15s ease,opacity .12s ease;
+  }
+  button:hover{background:var(--surface-2);border-color:var(--line-strong)}
+  button:active{opacity:.7}
+  button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+  button:disabled{opacity:.4;cursor:not-allowed}
+
+  .btn-primary{
+    background:linear-gradient(135deg,var(--accent),var(--accent-2));
+    border-color:transparent;color:#fff;
+    box-shadow:0 6px 16px var(--accent-ring);
+  }
+  .btn-primary:hover{background:linear-gradient(135deg,var(--accent-2),var(--accent))}
+
+  .btn-danger{
+    background:var(--red-soft);border-color:transparent;color:var(--red);
+  }
+  .btn-danger:hover{background:var(--red-soft);border-color:var(--red)}
+
+  .btn-ghost{background:transparent}
+
+  /* ---------------- console ---------------- */
+  .console{
+    background:var(--surface-3);border:1px solid var(--line);
+    border-radius:var(--radius);overflow:hidden;
+  }
+
+  .console-bar{
+    display:flex;align-items:center;justify-content:space-between;
+    gap:14px;flex-wrap:wrap;
+    padding:11px 15px;background:var(--surface);border-bottom:1px solid var(--line);
+  }
+  .console-bar h3{font-size:12.5px;font-weight:650}
+  .chips{display:flex;gap:6px;flex-wrap:wrap}
+
+  .chip{
+    font-size:11px;font-weight:600;padding:5px 11px;border-radius:999px;
+    background:transparent;border:1px solid var(--line);color:var(--muted);
+  }
+  .chip:hover{background:var(--surface-2);color:var(--txt)}
+  .chip.is-active{
+    background:var(--accent-soft);border-color:transparent;color:var(--accent);
+  }
+
+  .console-body{
+    padding:15px;font-family:var(--mono);font-size:12px;line-height:1.95;
+    max-height:240px;overflow-y:auto;
+  }
+  .console-body p{color:var(--muted);white-space:pre-wrap;word-break:break-word}
+  .console-body .t{color:var(--dim);margin-right:10px}
+  .console-body .tag{margin-right:8px;font-weight:600}
+  .console-body .ok{color:var(--green)}
+  .console-body .warn{color:var(--amber)}
+  .console-body .err{color:var(--red)}
+  .console-body .info{color:var(--accent)}
+
+  .console-body::-webkit-scrollbar{width:10px}
+  .console-body::-webkit-scrollbar-thumb{
+    background:var(--line);border-radius:999px;border:3px solid var(--surface-3);
+  }
+
+  footer.page-foot{
+    text-align:center;font-size:11.5px;color:var(--dim);
+    padding-top:8px;
+  }
+
+  /* ---------------- responsive ---------------- */
+  @media (max-width:1024px){
+    .shell{grid-template-columns:1fr;gap:24px;padding:22px 18px 60px}
+    .sidebar{
+      position:static;flex-direction:row;align-items:center;
+      gap:18px;flex-wrap:wrap;
+      border-bottom:1px solid var(--line);padding-bottom:18px;
+    }
+    .nav{flex-direction:row;overflow-x:auto;gap:4px;flex:1;
+      scrollbar-width:none;-ms-overflow-style:none}
+    .nav::-webkit-scrollbar{display:none}
+    .nav a{white-space:nowrap;padding:7px 12px;background:var(--surface-2)}
+    .nav a::before{display:none}
+    .side-note{display:none}
+  }
+
+  @media (max-width:520px){
+    .shell{padding:18px 14px 48px}
+    .grid{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(2,1fr)}
+    .actions button{flex:1 1 auto}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    html{scroll-behavior:auto}
+    *,*::before,*::after{animation:none!important;transition:none!important}
+  }
+</style>
+</head>
+<body>
+
+<a class="skip" href="#main">Skip to content</a>
+
+<input type="checkbox" id="theme-toggle" class="sr-only" aria-label="Toggle color theme" />
+
+<div class="shell">
+
+  <!-- ============ SIDEBAR ============ -->
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo">B</div>
+      <div>
+        <h1>Blooket Panel</h1>
+        <p>Local client dashboard</p>
+      </div>
+    </div>
+
+    <nav class="nav" aria-label="Sections">
+      <a href="#overview">Overview</a>
+      <a href="#gameplay">Gameplay</a>
+      <a href="#account">Account</a>
+      <a href="#connection">Connection</a>
+      <a href="#console">Console</a>
+    </nav>
+
+    <div class="side-note">
+      Runs entirely in this page. Nothing is sent anywhere until a module is armed.
+    </div>
+  </aside>
+
+  <!-- ============ MAIN ============ -->
+  <main class="main" id="main">
+
+    <div class="topbar" id="overview">
+      <div class="pill">
+        <span class="dot live"></span>
+        <span data-role="status">Disconnected — no game attached</span>
+      </div>
+
+      <label class="theme-toggle" title="Toggle theme">
+        <input type="checkbox" id="theme-toggle" class="sr-only" />
+        <span aria-hidden="true"></span>
+        <span class="sr-only">Toggle color theme</span>
+      </label>
+    </div>
+
+    <!-- ---- stats ---- -->
+    <section class="stats" aria-label="Session statistics">
+      <div class="stat"><span>Tokens</span><strong data-stat="tokens">0</strong></div>
+      <div class="stat"><span>XP</span><strong data-stat="xp">0</strong></div>
+      <div class="stat"><span>Blooks Owned</span><strong data-stat="blooks">0 / 0</strong></div>
+      <div class="stat"><span>Session Uptime</span><strong data-stat="uptime">00:00:00</strong></div>
+    </section>
+
+    <!-- ============ GAMEPLAY ============ -->
+    <section id="gameplay">
+      <p class="sec-title">Gameplay</p>
+      <div class="grid">
+
+        <article class="card" data-module="auto-answer">
+          <header class="card-head">
+            <div class="icon" aria-hidden="true">⚡</div>
+            <div class="card-title">
+              <h3>Auto-Answer</h3>
+              <p>Solves questions the instant they render</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <p class="card-body">
+            Reads the active question from page state and submits the correct answer automatically.
+          </p>
+
+          <hr class="divider" />
+
+          <div class="toggles">
+            <label class="toggle">
+              <span>Enabled</span>
+              <input type="checkbox" class="switch" role="switch" data-field="enabled" />
+            </label>
+          </div>
+
+          <div class="fields">
+            <div>
+              <label class="field-label" for="aa-delay">Reaction delay (ms)</label>
+              <input id="aa-delay" type="number" min="0" step="10" value="250" data-field="delay" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="start">Start</button>
+            <button class="btn-ghost" data-action="stop">Stop</button>
+          </div>
+        </article>
+
+        <article class="card" data-module="auto-bot">
+          <header class="card-head">
+            <div class="icon p" aria-hidden="true">▣</div>
+            <div class="card-title">
+              <h3>Auto-Bot</h3>
+              <p>Plays the match without you</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <p class="card-body">
+            Answers, buys upgrades, and targets the objective on a fixed loop until the game ends.
+          </p>
+
+          <hr class="divider" />
+
+          <div class="fields">
+            <div>
+              <label class="field-label" for="bot-strategy">Strategy</label>
+              <select id="bot-strategy" data-field="strategy">
+                <option value="balanced">Balanced</option>
+                <option value="aggressive">Aggressive — max score</option>
+                <option value="passive">Passive — survive only</option>
+              </select>
+            </div>
+            <div class="field-row">
+              <div>
+                <label class="field-label" for="bot-min">Min delay (ms)</label>
+                <input id="bot-min" type="number" min="0" step="10" value="180" data-field="delayMin" />
+              </div>
+              <div>
+                <label class="field-label" for="bot-max">Max delay (ms)</label>
+                <input id="bot-max" type="number" min="0" step="10" value="420" data-field="delayMax" />
+              </div>
+            </div>
+          </div>
+
+          <div class="toggles">
+            <label class="toggle">
+              <span>Auto-buy upgrades</span>
+              <input type="checkbox" class="switch" role="switch" data-field="autoBuy" checked />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="deploy">Deploy Bot</button>
+            <button class="btn-ghost" data-action="recall">Recall</button>
+          </div>
+        </article>
+
+        <article class="card" data-module="grind">
+          <header class="card-head">
+            <div class="icon r" aria-hidden="true">⟳</div>
+            <div class="card-title">
+              <h3>Grind Loop</h3>
+              <p>Unattended token farming</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <p class="card-body">
+            Joins, plays, and exits matches on repeat. Runs while you're away from the keyboard.
+          </p>
+
+          <hr class="divider" />
+
+          <div class="fields">
+            <div class="field-row">
+              <div>
+                <label class="field-label" for="grind-games">Games per cycle</label>
+                <input id="grind-games" type="number" min="1" value="10" data-field="gamesPerCycle" />
+              </div>
+              <div>
+                <label class="field-label" for="grind-cooldown">Cooldown (sec)</label>
+                <input id="grind-cooldown" type="number" min="0" value="5" data-field="cooldown" />
+              </div>
+            </div>
+          </div>
+
+          <div class="toggles">
+            <label class="toggle">
+              <span>Stop on error</span>
+              <input type="checkbox" class="switch" role="switch" data-field="stopOnError" checked />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="start">Start Loop</button>
+            <button class="btn-danger" data-action="kill">Kill</button>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ ACCOUNT ============ -->
+    <section id="account">
+      <p class="sec-title">Account</p>
+      <div class="grid">
+
+        <article class="card" data-module="rewards">
+          <header class="card-head">
+            <div class="icon g" aria-hidden="true">◎</div>
+            <div class="card-title">
+              <h3>Gold &amp; XP</h3>
+              <p>Direct account reward injection</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <p class="card-body">
+            Sends reward payloads straight to the account endpoint. Bypasses the match entirely.
+          </p>
+
+          <hr class="divider" />
+
+          <div class="fields">
+            <div class="field-row">
+              <div>
+                <label class="field-label" for="rw-tokens">Tokens</label>
+                <input id="rw-tokens" type="number" min="0" value="500" data-field="tokens" />
+              </div>
+              <div>
+                <label class="field-label" for="rw-xp">XP</label>
+                <input id="rw-xp" type="number" min="0" value="300" data-field="xp" />
+              </div>
+            </div>
+          </div>
+
+          <div class="toggles">
+            <label class="toggle">
+              <span>Repeat on interval</span>
+              <input type="checkbox" class="switch" role="switch" data-field="loop" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="apply">Apply Once</button>
+            <button class="btn-ghost" data-action="loop">Loop</button>
+          </div>
+        </article>
+
+        <article class="card" data-module="blooks">
+          <header class="card-head">
+            <div class="icon a" aria-hidden="true">✦</div>
+            <div class="card-title">
+              <h3>Unlock Blooks</h3>
+              <p>Open the full collection</p>
+            </div>
+            <span class="badge" data-role="state">Idle</span>
+          </header>
+
+          <p class="card-body">
+            Unlocks every blook in the catalog and optionally auto-sells duplicates for tokens.
+          </p>
+
+          <hr class="divider" />
+
+          <div class="toggles">
+            <label class="toggle">
+              <span>Auto-sell duplicates</span>
+              <input type="checkbox" class="switch" role="switch" data-field="autoSell" checked />
+            </label>
+            <label class="toggle">
+              <span>Include event blooks</span>
+              <input type="checkbox" class="switch" role="switch" data-field="includeEvent" />
+            </label>
+            <label class="toggle">
+              <span>Include chromatic variants</span>
+              <input type="checkbox" class="switch" role="switch" data-field="includeChromatic" />
+            </label>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="unlock">Unlock All</button>
+            <button class="btn-danger" data-action="reset">Reset Collection</button>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ CONNECTION ============ -->
+    <section id="connection">
+      <p class="sec-title">Connection</p>
+      <div class="grid">
+
+        <article class="card" data-module="session">
+          <header class="card-head">
+            <div class="icon" aria-hidden="true">⚙</div>
+            <div class="card-title">
+              <h3>Session</h3>
+              <p>Target and attach</p>
+            </div>
+            <span class="badge" data-role="state">Detached</span>
+          </header>
+
+          <p class="card-body">
+            Point the panel at a live match or attach to a standalone account session.
+          </p>
+
+          <hr class="divider" />
+
+          <div class="fields">
+            <div>
+              <label class="field-label" for="ses-pin">Game PIN</label>
+              <input id="ses-pin" type="text" inputmode="numeric" placeholder="000000" data-field="pin" />
+            </div>
+            <div>
+              <label class="field-label" for="ses-account">Account name</label>
+              <input id="ses-account" type="text" placeholder="username" data-field="account" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="btn-primary" data-action="attach">Attach</button>
+            <button class="btn-ghost" data-action="detach">Detach</button>
+          </div>
+        </article>
+
+      </div>
+    </section>
+
+    <!-- ============ CONSOLE ============ -->
+    <section id="console">
+      <p class="sec-title">Activity Log</p>
+
+      <div class="console">
+        <div class="console-bar">
+          <h3>Console</h3>
+          <div class="chips" role="group" aria-label="Log filter">
+            <button class="chip is-active" data-action="filter" data-filter="all">All</button>
+            <button class="chip" data-action="filter" data-filter="info">Info</button>
+            <button class="chip" data-action="filter" data-filter="ok">Success</button>
+            <button class="chip" data-action="filter" data-filter="warn">Warn</button>
+            <button class="chip" data-action="filter" data-filter="err">Error</button>
+            <button class="chip" data-action="clear">Clear</button>
+          </div>
+        </div>
+
+        <div class="console-body" data-role="log" role="log" aria-live="polite" aria-label="Activity log">
+          <p><span class="t">00:00:00</span><span class="tag info">[panel]</span>Dashboard loaded — standby.</p>
+          <p><span class="t">00:00:00</span><span class="tag warn">[panel]</span>No game attached.</p>
+        </div>
+      </div>
+    </section>
+
+    <footer class="page-foot">Local panel · nothing leaves this page</footer>
+
+  </main>
+</div>
+
+<!-- ============ CANONICAL MODULE TEMPLATE ============
+     Clone this, set data-module and the visible labels.
+     No CSS or layout changes required for new modules.
+-->
+<template id="module-template">
+  <article class="card" data-module="MODULE_ID">
+    <header class="card-head">
+      <div class="icon" aria-hidden="true">◆</div>
+      <div class="card-title">
+        <h3>Module Title</h3>
+        <p>One-line description</p>
+      </div>
+      <span class="badge" data-role="state">Idle</span>
+    </header>
+
+    <p class="card-body">What this module does.</p>
+
+    <hr class="divider" />
+
+    <div class="toggles">
+      <label class="toggle">
+        <span>Enabled</span>
+        <input type="checkbox" class="switch" role="switch" data-field="enabled" />
+      </label>
+    </div>
+
+    <div class="fields">
+      <div>
+        <label class="field-label" for="MODULE_ID-value">Value</label>
+        <input id="MODULE_ID-value" type="number" value="0" data-field="value" />
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn-primary" data-action="start">Start</button>
+      <button class="btn-ghost" data-action="stop">Stop</button>
+    </div>
+  </article>
+</template>
+
+</body>
+</html>
