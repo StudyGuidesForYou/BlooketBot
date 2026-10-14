@@ -3,987 +3,1504 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Blooket Control Panel</title>
+<title>Blooket Panel</title>
 
 <!--
   ============================================================
   DOM CONTRACT — engine.js binds to these.
   ============================================================
 
-    [data-module="id"]      module root
+    [data-module="id"]      module root — buttons read fields from
+                            the nearest [data-module] ancestor
     [data-action="verb"]    clickable control
     [data-field="name"]     input / toggle / select
     [data-role="state"]     per-module badge
-    [data-role="status"]    global pill
+    [data-role="status"]    global connection pill
+    [data-role="mode"]      mode label in header
     [data-role="log"]       log container
     [data-role="toasts"]    toast stack
-    [data-role="blook-grid"]      blook picker results
-    [data-role="blook-selected"]  current pick label
+    [data-role="player-list"]   injected player rows
+    [data-role="blook-grid"]    blook picker results
+    [data-role="blook-selected"] current pick label
+    [data-role="primary-stat"]  relabels itself per mode
     [data-stat="key"]       stat value slot
     [data-filter="kind"]    log filter chip
+    [data-tab="id"]         tab pane
+    [data-tab-target="id"]  tab button
+    [data-mode-pane]        shows only when body[data-mode] matches
 
-  Sections:
-    Join — pin + name + attach
-    Blooks — pick any blook to play as
-    Overrides — in-match commands (cmd-*)
-    Gameplay — auto-answer, auto-bot, grind
-    Console — activity log
-
-  Blook grid is populated by engine.js as
-    <button class="blook" data-action="pick" data-blook-id="..." data-blook-name="...">
-      <span class="blook-dot" style="--c:#hex"></span>
-      <span>Name</span>
-      <small>rarity</small>
-    </button>
+  Body attributes set by engine.js:
+    data-in-game="true|false"
+    data-panel-open="true|false"
+    data-mode="gold|crypto|fishing|dino|factory|racing|
+               rush|tower2|brawl|battle|candy|coco|
+               laser|bees|shamrock|tagtreat|unknown"
   ============================================================
 -->
 
 <style>
   :root{
     color-scheme: dark;
-    --bg:#0b0e14;
-    --surface:#121722;
-    --surface-2:#171d2b;
-    --surface-3:#0d121c;
-    --line:#232c3d;
-    --line-strong:#33415c;
-    --txt:#e6ebf5;
-    --muted:#7d8899;
-    --dim:#4a5568;
-    --accent:#4f8cff;
-    --accent-2:#7c5cff;
-    --accent-soft:rgba(79,140,255,.14);
-    --accent-ring:rgba(79,140,255,.35);
-    --green:#2fd07a;
-    --amber:#ffb020;
-    --red:#ff4d5e;
-    --green-soft:rgba(47,208,122,.14);
-    --amber-soft:rgba(255,176,32,.14);
-    --red-soft:rgba(255,77,94,.14);
-    --glow-a:#1b2440;
-    --glow-b:#2a1d45;
-    --shadow:0 8px 22px rgba(0,0,0,.35);
-    --radius:12px;
-    --radius-sm:8px;
+    --bg:#0a0c10;
+    --panel:#0e1116;
+    --panel-2:#131820;
+    --panel-3:#0b0e13;
+    --line:#1e2633;
+    --line-2:#2a3546;
+    --txt:#d7dee9;
+    --txt-2:#8b97a8;
+    --txt-3:#4d5868;
+    --accent:#00d4ff;
+    --accent-2:#0091ff;
+    --accent-dim:rgba(0,212,255,.12);
+    --accent-line:rgba(0,212,255,.35);
+    --ok:#3ddc84;
+    --warn:#ffb020;
+    --err:#ff4d5e;
+    --ok-dim:rgba(61,220,132,.12);
+    --warn-dim:rgba(255,176,32,.12);
+    --err-dim:rgba(255,77,94,.12);
+    --shadow:0 20px 60px rgba(0,0,0,.65), 0 0 0 1px rgba(255,255,255,.02);
+    --radius:4px;
+    --radius-sm:3px;
     --sans:"Segoe UI",Inter,system-ui,-apple-system,sans-serif;
     --mono:"SF Mono",ui-monospace,"Cascadia Mono",Consolas,Monaco,monospace;
   }
 
-  body:has(#theme-toggle:checked){
+  body.light{
     color-scheme: light;
-    --bg:#f4f6fa;
-    --surface:#ffffff;
-    --surface-2:#f8fafd;
-    --surface-3:#ffffff;
-    --line:#e5eaf3;
-    --line-strong:#c8d4e6;
-    --txt:#111726;
-    --muted:#65718a;
-    --dim:#9aa5b8;
-    --accent:#3b7bff;
-    --accent-2:#6b4cff;
-    --accent-soft:rgba(59,123,255,.10);
-    --accent-ring:rgba(59,123,255,.25);
-    --green:#0f9d58;
-    --amber:#b8730a;
-    --red:#dc3545;
-    --green-soft:rgba(15,157,88,.10);
-    --amber-soft:rgba(184,115,10,.10);
-    --red-soft:rgba(220,53,69,.10);
-    --glow-a:#e3ebff;
-    --glow-b:#efe6ff;
-    --shadow:0 8px 22px rgba(20,40,80,.06);
+    --bg:#eef1f6;
+    --panel:#ffffff;
+    --panel-2:#f5f7fb;
+    --panel-3:#eef1f6;
+    --line:#d7dee9;
+    --line-2:#c0cad8;
+    --txt:#111823;
+    --txt-2:#5b6879;
+    --txt-3:#9aa5b5;
+    --accent:#0084b3;
+    --accent-2:#0069a3;
+    --accent-dim:rgba(0,132,179,.10);
+    --accent-line:rgba(0,132,179,.35);
+    --ok:#0f9d58;
+    --warn:#b8730a;
+    --err:#dc3545;
+    --ok-dim:rgba(15,157,88,.10);
+    --warn-dim:rgba(184,115,10,.10);
+    --err-dim:rgba(220,53,69,.10);
+    --shadow:0 20px 60px rgba(20,40,80,.15), 0 0 0 1px rgba(0,0,0,.04);
   }
 
   *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-
-  html{scroll-behavior:smooth}
+  html,body{height:100%}
 
   body{
     background:
-      radial-gradient(1000px 480px at 12% -12%, var(--glow-a) 0%, transparent 62%),
-      radial-gradient(800px 420px at 100% 0%, var(--glow-b) 0%, transparent 58%),
+      repeating-linear-gradient(0deg, transparent 0 31px, rgba(255,255,255,.012) 31px 32px),
+      repeating-linear-gradient(90deg, transparent 0 31px, rgba(255,255,255,.012) 31px 32px),
+      radial-gradient(1200px 600px at 50% -20%, rgba(0,212,255,.05), transparent 60%),
       var(--bg);
     background-attachment:fixed;
     color:var(--txt);
     font-family:var(--sans);
-    font-size:13px;
-    line-height:1.45;
-    min-height:100vh;
+    font-size:12px;
+    line-height:1.4;
+    overflow:hidden;
     -webkit-font-smoothing:antialiased;
   }
-
-  .sr-only{
-    position:absolute;width:1px;height:1px;padding:0;margin:-1px;
-    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+  body.light{
+    background:
+      repeating-linear-gradient(0deg, transparent 0 31px, rgba(0,0,0,.015) 31px 32px),
+      repeating-linear-gradient(90deg, transparent 0 31px, rgba(0,0,0,.015) 31px 32px),
+      var(--bg);
+    background-attachment:fixed;
   }
 
-  .skip{
-    position:absolute;left:12px;top:-60px;z-index:99;
-    background:var(--accent);color:#fff;padding:8px 14px;
-    border-radius:var(--radius-sm);font-weight:600;text-decoration:none;
-    transition:top .18s ease;
-  }
-  .skip:focus{top:12px}
+  .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
 
-  /* ---------------- shell ---------------- */
-  .shell{
-    max-width:1180px;margin:0 auto;padding:18px 18px 48px;
-    display:flex;flex-direction:column;gap:20px;
+  /* ============================================================
+     LAUNCHER
+     ============================================================ */
+  .launcher{
+    position:fixed;bottom:16px;right:16px;
+    width:44px;height:44px;border-radius:50%;
+    border:1px solid var(--accent-line);
+    background:linear-gradient(180deg, var(--accent), var(--accent-2));
+    color:#001218;
+    font-family:var(--mono);font-size:14px;font-weight:800;letter-spacing:.04em;
+    cursor:pointer;
+    box-shadow:0 8px 24px rgba(0,0,0,.55), 0 0 0 1px rgba(0,212,255,.15);
+    z-index:90;display:grid;place-items:center;
+    transition:transform .15s ease, box-shadow .15s ease;
   }
+  .launcher:hover{transform:scale(1.06)}
+  .launcher:active{transform:scale(.98)}
+  body[data-panel-open="true"] .launcher,
+  body[data-in-game="true"]   .launcher{display:none}
 
-  /* ---------------- topbar ---------------- */
-  .topbar{
-    display:flex;align-items:center;gap:16px;flex-wrap:wrap;
-    padding:10px 14px;background:var(--surface);
-    border:1px solid var(--line);border-radius:var(--radius);
+  /* ============================================================
+     PANEL
+     ============================================================ */
+  .panel{
+    display:none;
+    position:fixed;top:80px;left:80px;
+    width:980px;max-width:calc(100vw - 32px);
+    height:min(740px, calc(100vh - 120px));
+    background:var(--panel);
+    border:1px solid var(--line-2);
+    border-radius:var(--radius);
     box-shadow:var(--shadow);
-    position:sticky;top:14px;z-index:20;
-    backdrop-filter:blur(10px);
+    flex-direction:column;overflow:hidden;z-index:100;
   }
+  body[data-panel-open="true"] .panel,
+  body[data-in-game="true"]   .panel{display:flex}
 
-  .brand{display:flex;align-items:center;gap:10px;flex:0 0 auto}
+  .panel.is-minimized{height:38px}
+  .panel.is-minimized .panel-body,
+  .panel.is-minimized .panel-tabs,
+  .panel.is-minimized .panel-foot{display:none}
 
-  .logo{
-    width:30px;height:30px;border-radius:9px;
+  /* ---------------- HEADER ---------------- */
+  .panel-head{
+    display:flex;align-items:center;gap:10px;
+    padding:0 10px;height:38px;
+    background:var(--panel-2);
+    border-bottom:1px solid var(--line);
+    cursor:grab;user-select:none;flex:0 0 auto;
+  }
+  .panel-head:active{cursor:grabbing}
+
+  .mark{
+    width:18px;height:18px;border-radius:3px;
     background:linear-gradient(135deg,var(--accent),var(--accent-2));
     display:grid;place-items:center;
-    font-weight:800;font-size:14px;color:#fff;
-    box-shadow:0 4px 12px var(--accent-ring);
+    font-family:var(--mono);font-size:10px;font-weight:700;color:#001218;
+    flex:0 0 auto;
   }
 
-  .brand h1{font-size:13.5px;font-weight:700;letter-spacing:-.1px}
-  .brand p{font-size:10.5px;color:var(--muted);line-height:1}
-
-  .nav{
-    display:flex;gap:2px;flex:1 1 auto;overflow-x:auto;
-    scrollbar-width:none;-ms-overflow-style:none;
+  .panel-title{
+    font-family:var(--mono);font-size:11px;font-weight:700;
+    letter-spacing:.04em;text-transform:uppercase;color:var(--txt);
   }
-  .nav::-webkit-scrollbar{display:none}
-  .nav a{
-    white-space:nowrap;padding:6px 11px;border-radius:var(--radius-sm);
-    color:var(--muted);text-decoration:none;font-size:12px;font-weight:500;
-    transition:background .15s ease,color .15s ease;
-  }
-  .nav a:hover{background:var(--surface-2);color:var(--txt)}
-  .nav a:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .panel-title span{color:var(--txt-3);font-weight:400;margin-left:6px;text-transform:none;letter-spacing:0}
 
-  .topbar-right{display:flex;align-items:center;gap:10px;flex:0 0 auto}
-
-  .pill{
-    display:inline-flex;align-items:center;gap:7px;
-    background:var(--surface-2);border:1px solid var(--line);
-    padding:5px 11px;border-radius:999px;
-    font-size:11.5px;color:var(--muted);
+  .panel-status{
+    display:inline-flex;align-items:center;gap:6px;
+    margin-left:auto;padding:3px 9px;border-radius:999px;
+    background:var(--panel-3);border:1px solid var(--line);
+    font-family:var(--mono);font-size:10.5px;color:var(--txt-2);
   }
 
-  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:0 0 auto}
-  .dot.live{background:var(--green);animation:pulse 2s infinite}
-  @keyframes pulse{
-    0%{box-shadow:0 0 0 0 var(--green-soft)}
-    70%{box-shadow:0 0 0 8px transparent}
-    100%{box-shadow:0 0 0 0 transparent}
+  .led{
+    width:6px;height:6px;border-radius:50%;
+    background:var(--txt-3);box-shadow:0 0 6px transparent;flex:0 0 auto;
   }
+  .led.on{background:var(--ok);box-shadow:0 0 6px var(--ok);animation:blink 2s ease-in-out infinite}
+  @keyframes blink{0%,100%{opacity:1}50%{opacity:.55}}
 
-  .theme-toggle{
-    display:grid;place-items:center;
-    width:30px;height:30px;border-radius:var(--radius-sm);
-    background:var(--surface-2);border:1px solid var(--line);
-    cursor:pointer;color:var(--muted);font-size:13px;
-    transition:background .15s ease,color .15s ease;
+  .head-btn{
+    width:24px;height:24px;display:grid;place-items:center;
+    border-radius:var(--radius-sm);border:1px solid transparent;
+    background:transparent;color:var(--txt-2);
+    font-family:var(--mono);font-size:12px;line-height:1;
+    cursor:pointer;flex:0 0 auto;
   }
-  .theme-toggle:hover{background:var(--surface);color:var(--txt)}
-  .theme-toggle:focus-within{outline:2px solid var(--accent);outline-offset:1px}
-  .theme-toggle span::before{content:"☾"}
-  body:has(#theme-toggle:checked) .theme-toggle span::before{content:"☀"}
+  .head-btn:hover{background:var(--panel-3);border-color:var(--line);color:var(--txt)}
+  .head-btn[data-action="close-panel"]:hover{color:var(--err);border-color:var(--err-dim);background:var(--err-dim)}
 
-  /* ---------------- stats ---------------- */
+  /* ---------------- TABS ---------------- */
+  .panel-tabs{
+    display:flex;align-items:stretch;
+    background:var(--panel-3);
+    border-bottom:1px solid var(--line);
+    padding:0 6px;flex:0 0 auto;
+    overflow-x:auto;scrollbar-width:none;
+  }
+  .panel-tabs::-webkit-scrollbar{display:none}
+
+  .tab{
+    padding:8px 14px;
+    font-family:var(--mono);font-size:10.5px;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase;
+    color:var(--txt-3);background:transparent;
+    border:0;border-bottom:2px solid transparent;
+    cursor:pointer;white-space:nowrap;
+    transition:color .12s ease, border-color .12s ease;
+  }
+  .tab:hover{color:var(--txt-2)}
+  .tab.is-active{color:var(--accent);border-bottom-color:var(--accent)}
+  body:not([data-in-game="true"]) .tab:not([data-tab-target="join"]){display:none}
+
+  /* ---------------- BODY ---------------- */
+  .panel-body{flex:1 1 auto;overflow:auto;padding:14px;min-height:0}
+  .panel-body::-webkit-scrollbar{width:10px;height:10px}
+  .panel-body::-webkit-scrollbar-track{background:var(--panel)}
+  .panel-body::-webkit-scrollbar-thumb{background:var(--line);border:3px solid var(--panel);border-radius:999px}
+  .panel-body::-webkit-scrollbar-thumb:hover{background:var(--line-2)}
+
+  .tab-pane{display:none}
+  .tab-pane.is-active{display:block}
+
+  /* ---------------- MODE-SPECIFIC VISIBILITY ---------------- */
+  [data-mode-pane]{display:none}
+  body[data-mode="gold"]     [data-mode-pane~="gold"],
+  body[data-mode="crypto"]   [data-mode-pane~="crypto"],
+  body[data-mode="fishing"]  [data-mode-pane~="fishing"],
+  body[data-mode="dino"]     [data-mode-pane~="dino"],
+  body[data-mode="factory"]  [data-mode-pane~="factory"],
+  body[data-mode="racing"]   [data-mode-pane~="racing"],
+  body[data-mode="rush"]     [data-mode-pane~="rush"],
+  body[data-mode="tower2"]   [data-mode-pane~="tower2"],
+  body[data-mode="brawl"]    [data-mode-pane~="brawl"],
+  body[data-mode="battle"]   [data-mode-pane~="battle"],
+  body[data-mode="candy"]    [data-mode-pane~="candy"],
+  body[data-mode="coco"]     [data-mode-pane~="coco"],
+  body[data-mode="laser"]    [data-mode-pane~="laser"],
+  body[data-mode="bees"]     [data-mode-pane~="bees"],
+  body[data-mode="shamrock"] [data-mode-pane~="shamrock"],
+  body[data-mode="tagtreat"] [data-mode-pane~="tagtreat"]{display:block}
+
+  .mode-note{
+    display:none;padding:10px;
+    border:1px dashed var(--line);
+    border-radius:var(--radius-sm);
+    font-family:var(--mono);font-size:11px;color:var(--txt-3);
+    text-align:center;
+  }
+  body[data-in-game="true"][data-mode="unknown"] .mode-note.fallback{display:block}
+  .mode-note.static{display:block}
+
+  /* ---------------- STATS ---------------- */
   .stats{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));
-    gap:10px;
+    display:grid;grid-template-columns:repeat(4,1fr);gap:1px;
+    background:var(--line);
+    border:1px solid var(--line);border-radius:var(--radius-sm);
+    overflow:hidden;margin-bottom:12px;
   }
-
-  .stat{
-    background:linear-gradient(180deg,var(--surface-2),var(--surface));
-    border:1px solid var(--line);border-radius:var(--radius);
-    padding:10px 13px;position:relative;overflow:hidden;
-  }
-  .stat::after{
-    content:"";position:absolute;inset:0 auto 0 0;width:2px;
-    background:linear-gradient(180deg,var(--accent),var(--accent-2));
-    opacity:.7;
-  }
+  .stat{background:var(--panel-3);padding:8px 12px}
   .stat span{
-    display:block;font-size:10px;text-transform:uppercase;
-    letter-spacing:.8px;color:var(--muted);margin-bottom:3px;
+    display:block;font-family:var(--mono);
+    font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--txt-3);margin-bottom:3px;
   }
   .stat strong{
-    font-size:16px;font-weight:700;letter-spacing:-.3px;
-    font-variant-numeric:tabular-nums;
+    display:block;font-family:var(--mono);
+    font-size:14px;font-weight:700;color:var(--txt);
+    font-variant-numeric:tabular-nums;letter-spacing:-.02em;
   }
 
-  /* ---------------- sections ---------------- */
-  section{scroll-margin-top:80px}
-
-  .sec-title{
-    display:flex;align-items:center;gap:10px;
-    font-size:10.5px;text-transform:uppercase;letter-spacing:1.2px;
-    color:var(--muted);font-weight:600;margin-bottom:10px;
+  /* ---------------- ROWS / FIELDS ---------------- */
+  .row{
+    display:grid;grid-template-columns:150px 1fr;
+    align-items:center;gap:10px;
+    padding:7px 0;border-bottom:1px solid var(--line);
   }
-  .sec-title::after{content:"";flex:1;height:1px;background:var(--line)}
+  .row:last-child{border-bottom:0}
 
-  .sec-hint{
-    font-size:11.5px;color:var(--dim);line-height:1.5;
-    margin:-4px 0 10px;
+  .row label, .lbl{
+    font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;
+    color:var(--txt-2);text-transform:uppercase;
   }
 
-  .grid{
-    display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));
-    gap:12px;
+  input[type=text],
+  input[type=number],
+  input[type=search],
+  select,
+  textarea{
+    width:100%;
+    background:var(--panel-3);
+    border:1px solid var(--line);
+    border-radius:var(--radius-sm);
+    padding:6px 9px;color:var(--txt);
+    font-family:var(--mono);font-size:11.5px;
+    outline:none;transition:border-color .12s ease, box-shadow .12s ease;
   }
-
-  /* ---------------- card ---------------- */
-  .card{
-    background:linear-gradient(180deg,var(--surface-2),var(--surface));
-    border:1px solid var(--line);border-radius:var(--radius);
-    padding:14px;display:flex;flex-direction:column;gap:11px;
-    transition:border-color .15s ease;
-  }
-  .card:hover{border-color:var(--line-strong)}
-
-  .card-head{display:flex;align-items:flex-start;gap:10px}
-
-  .icon{
-    width:30px;height:30px;border-radius:8px;flex:0 0 auto;
-    display:grid;place-items:center;font-size:13px;
-    background:var(--accent-soft);color:var(--accent);
-  }
-  .icon.g{background:var(--green-soft);color:var(--green)}
-  .icon.a{background:var(--amber-soft);color:var(--amber)}
-  .icon.p{background:rgba(124,92,255,.12);color:var(--accent-2)}
-  .icon.r{background:var(--red-soft);color:var(--red)}
-
-  .card-title{flex:1;min-width:0}
-  .card-title h3{font-size:12.5px;font-weight:650;letter-spacing:-.1px}
-  .card-title p{font-size:11px;color:var(--muted);margin-top:1px}
-
-  .badge{
-    flex:0 0 auto;font-size:9.5px;font-weight:700;
-    letter-spacing:.6px;text-transform:uppercase;
-    padding:3px 8px;border-radius:999px;
-    background:var(--surface-3);border:1px solid var(--line);color:var(--muted);
-  }
-  .badge.live{background:var(--green-soft);border-color:transparent;color:var(--green)}
-  .badge.warn{background:var(--amber-soft);border-color:transparent;color:var(--amber)}
-  .badge.err{background:var(--red-soft);border-color:transparent;color:var(--red)}
-
-  .card-body{font-size:11.5px;color:var(--muted);line-height:1.5}
-
-  .divider{height:1px;background:var(--line);border:0}
-
-  .fields{display:flex;flex-direction:column;gap:9px}
-  .field-row{display:flex;gap:8px;flex-wrap:wrap}
-  .field-row > *{flex:1 1 110px;min-width:0}
-
-  label.field-label{
-    display:block;font-size:10.5px;color:var(--muted);
-    margin-bottom:4px;letter-spacing:.3px;
-  }
-
-  input[type=text],input[type=number],input[type=search],select{
-    width:100%;background:var(--surface-3);border:1px solid var(--line);
-    border-radius:var(--radius-sm);padding:7px 10px;color:var(--txt);
-    font-family:inherit;font-size:12px;outline:none;
-    transition:border-color .15s ease,box-shadow .15s ease;
-  }
-  input::placeholder{color:var(--dim)}
-  input:focus,select:focus{
+  input::placeholder{color:var(--txt-3)}
+  input:focus, select:focus{
     border-color:var(--accent);
-    box-shadow:0 0 0 3px var(--accent-soft);
+    box-shadow:0 0 0 2px var(--accent-dim);
   }
-  select{cursor:pointer;appearance:none;
-    background-image:linear-gradient(45deg,transparent 50%,var(--muted) 50%),
-                     linear-gradient(135deg,var(--muted) 50%,transparent 50%);
-    background-position:calc(100% - 15px) 50%,calc(100% - 10px) 50%;
-    background-size:4px 4px,4px 4px;background-repeat:no-repeat;
-    padding-right:28px;
-  }
-
-  /* ---------------- toggles ---------------- */
-  .toggles{display:flex;flex-direction:column}
-
-  .toggle{
-    display:flex;align-items:center;justify-content:space-between;
-    gap:10px;padding:7px 0;cursor:pointer;
-    border-bottom:1px solid var(--line);
-  }
-  .toggle:last-child{border-bottom:none}
-  .toggle span{font-size:11.5px;color:var(--txt)}
-
-  .switch{
-    appearance:none;-webkit-appearance:none;
-    width:34px;height:19px;border-radius:999px;flex:0 0 auto;
-    background:var(--line);border:1px solid var(--line);
-    position:relative;cursor:pointer;margin:0;
-    transition:background .18s ease,border-color .18s ease;
-  }
-  .switch::after{
-    content:"";position:absolute;top:2px;left:2px;
-    width:13px;height:13px;border-radius:50%;
-    background:var(--muted);
-    transition:transform .18s ease,background .18s ease;
-  }
-  .switch:checked{background:var(--accent-soft);border-color:var(--accent)}
-  .switch:checked::after{transform:translateX(15px);background:var(--accent)}
-  .switch:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-
-  /* ---------------- buttons ---------------- */
-  .actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:auto}
-
-  button{
-    font-family:inherit;font-size:11.5px;font-weight:600;
-    border-radius:var(--radius-sm);padding:7px 13px;cursor:pointer;
-    border:1px solid var(--line);background:var(--surface-3);color:var(--txt);
-    transition:background .15s ease,border-color .15s ease,opacity .12s ease;
-  }
-  button:hover{background:var(--surface-2);border-color:var(--line-strong)}
-  button:active{opacity:.7}
-  button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-  button:disabled{opacity:.4;cursor:not-allowed}
-
-  .btn-primary{
-    background:linear-gradient(135deg,var(--accent),var(--accent-2));
-    border-color:transparent;color:#fff;
-    box-shadow:0 4px 12px var(--accent-ring);
-  }
-  .btn-primary:hover{background:linear-gradient(135deg,var(--accent-2),var(--accent))}
-
-  .btn-danger{
-    background:var(--red-soft);border-color:transparent;color:var(--red);
-  }
-  .btn-danger:hover{background:var(--red-soft);border-color:var(--red)}
-
-  .btn-ghost{background:transparent}
-
-  /* ---------------- blook picker ---------------- */
-  .picker{
-    background:var(--surface);border:1px solid var(--line);
-    border-radius:var(--radius);overflow:hidden;
+  select{
+    cursor:pointer;appearance:none;
+    background-image:
+      linear-gradient(45deg, transparent 50%, var(--txt-3) 50%),
+      linear-gradient(135deg, var(--txt-3) 50%, transparent 50%);
+    background-position:calc(100% - 13px) 50%, calc(100% - 8px) 50%;
+    background-size:4px 4px,4px 4px;
+    background-repeat:no-repeat;padding-right:24px;
   }
 
-  .picker-bar{
-    display:flex;gap:8px;padding:11px 13px;
-    border-bottom:1px solid var(--line);background:var(--surface-2);
-    flex-wrap:wrap;
+  .inline{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .inline > input{flex:1 1 80px;min-width:0}
+  .inline > button{flex:0 0 auto}
+
+  /* ---------------- BUTTONS ---------------- */
+  .btn{
+    font-family:var(--mono);font-size:10.5px;font-weight:600;
+    letter-spacing:.06em;text-transform:uppercase;
+    padding:6px 12px;border-radius:var(--radius-sm);
+    border:1px solid var(--line-2);
+    background:var(--panel-2);color:var(--txt);
+    cursor:pointer;white-space:nowrap;
+    transition:background .12s ease, border-color .12s ease, color .12s ease;
   }
-  .picker-bar input{flex:1 1 220px}
-  .picker-bar button{flex:0 0 auto}
+  .btn:hover{background:var(--panel-3);border-color:var(--accent-line)}
+  .btn:active{transform:translateY(1px)}
+  .btn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .btn:disabled{opacity:.4;cursor:not-allowed}
+
+  .btn.go{
+    background:linear-gradient(180deg, var(--accent), var(--accent-2));
+    border-color:transparent;color:#001218;font-weight:700;
+  }
+  .btn.go:hover{background:linear-gradient(180deg, var(--accent-2), var(--accent))}
+
+  .btn.danger{color:var(--err);border-color:var(--err-dim);background:transparent}
+  .btn.danger:hover{background:var(--err-dim);border-color:var(--err)}
+
+  .btn.warn{color:var(--warn);border-color:var(--warn-dim);background:transparent}
+  .btn.warn:hover{background:var(--warn-dim);border-color:var(--warn)}
+
+  .btn.ghost{background:transparent;border-color:var(--line);color:var(--txt-2)}
+  .btn.ghost:hover{color:var(--txt);border-color:var(--line-2)}
+
+  .btn.small{padding:4px 9px;font-size:10px}
+
+  /* ---------------- SWITCH ---------------- */
+  .sw{position:relative;display:inline-flex;width:32px;height:18px;flex:0 0 auto;cursor:pointer}
+  .sw input{position:absolute;opacity:0;pointer-events:none}
+  .sw span{
+    width:100%;height:100%;border-radius:999px;
+    background:var(--line);border:1px solid var(--line-2);
+    transition:background .14s ease, border-color .14s ease;position:relative;
+  }
+  .sw span::after{
+    content:"";position:absolute;top:1px;left:1px;
+    width:12px;height:12px;border-radius:50%;
+    background:var(--txt-3);transition:transform .14s ease, background .14s ease;
+  }
+  .sw input:checked + span{background:var(--accent-dim);border-color:var(--accent)}
+  .sw input:checked + span::after{transform:translateX(14px);background:var(--accent)}
+
+  /* ---------------- SECTION HEADING ---------------- */
+  .sec{
+    font-family:var(--mono);font-size:9.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:var(--txt-3);
+    margin:16px 0 6px;display:flex;align-items:center;gap:8px;
+  }
+  .sec:first-child{margin-top:0}
+  .sec::after{content:"";flex:1;height:1px;background:var(--line)}
+
+  /* ---------------- OVERRIDE ROW ---------------- */
+  .cmd{
+    display:grid;grid-template-columns:180px 1fr;gap:12px;
+    align-items:center;padding:8px 0;border-bottom:1px solid var(--line);
+  }
+  .cmd:last-child{border-bottom:0}
+  .cmd-name{
+    font-family:var(--mono);font-size:11px;color:var(--txt);
+    font-weight:600;letter-spacing:.02em;
+  }
+  .cmd-name small{
+    display:block;font-size:9.5px;font-weight:400;color:var(--txt-3);
+    letter-spacing:0;margin-top:1px;text-transform:none;
+  }
+  .cmd-inputs{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .cmd-inputs input{flex:1 1 80px;min-width:0}
+  .cmd-inputs button{flex:0 0 auto}
+
+  /* ---------------- BLOOK GRID ---------------- */
+  .blook-search{display:flex;gap:6px;margin-bottom:10px}
+  .blook-search input{flex:1 1 auto}
 
   .blook-grid{
-    display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));
-    gap:6px;padding:11px 13px;max-height:300px;overflow-y:auto;
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+    gap:4px;max-height:340px;overflow-y:auto;padding:1px;
+    border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--panel-3);
   }
   .blook-grid::-webkit-scrollbar{width:8px}
-  .blook-grid::-webkit-scrollbar-thumb{
-    background:var(--line);border-radius:999px;border:2px solid var(--surface);
-  }
+  .blook-grid::-webkit-scrollbar-thumb{background:var(--line);border:2px solid var(--panel-3);border-radius:999px}
   .blook-grid:empty::after{
-    content:"No catalog loaded — hit Load Catalog.";
-    grid-column:1 / -1;
-    color:var(--dim);font-size:11.5px;padding:14px 0;text-align:center;
+    content:"No catalog — hit RELOAD.";grid-column:1 / -1;
+    font-family:var(--mono);font-size:11px;color:var(--txt-3);
+    padding:20px;text-align:center;
   }
 
   .blook{
-    display:flex;align-items:center;gap:8px;
-    padding:6px 9px;border-radius:var(--radius-sm);
-    background:var(--surface-2);border:1px solid var(--line);
-    color:var(--txt);font-size:11.5px;font-weight:500;
+    display:flex;align-items:center;gap:7px;
+    padding:5px 8px;background:transparent;
+    border:1px solid transparent;border-radius:var(--radius-sm);
+    color:var(--txt-2);font-family:var(--mono);font-size:11px;
     cursor:pointer;text-align:left;width:100%;
-    transition:background .15s ease,border-color .15s ease;
+    transition:background .1s ease, color .1s ease, border-color .1s ease;
   }
-  .blook:hover{background:var(--surface-3);border-color:var(--line-strong)}
-  .blook.is-picked{
-    border-color:var(--accent);
-    background:var(--accent-soft);
-  }
-  .blook-dot{
-    width:10px;height:10px;border-radius:50%;flex:0 0 auto;
-    background:var(--c, var(--muted));
-    box-shadow:0 0 0 2px var(--surface);
-  }
+  .blook:hover{background:var(--panel-2);color:var(--txt)}
+  .blook.is-picked{background:var(--accent-dim);border-color:var(--accent-line);color:var(--accent)}
+  .blook-dot{width:8px;height:8px;border-radius:2px;flex:0 0 auto;background:var(--c, var(--txt-3))}
   .blook span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .blook small{color:var(--muted);font-size:10px;flex:0 0 auto}
+  .blook small{color:var(--txt-3);font-size:9.5px;flex:0 0 auto}
 
-  .picker-foot{
+  .blook-foot{
     display:flex;align-items:center;justify-content:space-between;
-    gap:10px;padding:10px 13px;
-    border-top:1px solid var(--line);background:var(--surface-2);
-    flex-wrap:wrap;
+    gap:10px;margin-top:8px;
+    font-family:var(--mono);font-size:10.5px;color:var(--txt-2);
   }
-  .picker-foot span{font-size:11.5px;color:var(--muted)}
-  .picker-foot strong{color:var(--txt);font-weight:650}
+  .blook-foot strong{color:var(--accent);font-weight:600}
 
-  /* ---------------- command list ---------------- */
-  .commands{
-    background:var(--surface);border:1px solid var(--line);
-    border-radius:var(--radius);overflow:hidden;
-  }
+  /* ---------------- PLAYER SCANNER ---------------- */
+  .scan-bar{display:flex;gap:6px;margin-bottom:8px}
+  .scan-bar input{flex:1 1 auto}
+  .scan-bar button{flex:0 0 auto}
 
-  .command{
-    display:grid;
-    grid-template-columns:minmax(150px,1fr) minmax(0,2.2fr);
-    align-items:center;gap:14px;
-    padding:10px 14px;
-    border-bottom:1px solid var(--line);
-    transition:background .15s ease;
-  }
-  .command:last-child{border-bottom:none}
-  .command:hover{background:var(--surface-2)}
-
-  .command-info strong{
-    display:block;font-size:12px;font-weight:650;letter-spacing:-.1px;
-  }
-  .command-info small{
-    display:block;font-size:10.5px;color:var(--muted);margin-top:1px;
-    line-height:1.4;
-  }
-
-  .command-inputs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
-  .command-inputs input{flex:1 1 110px;min-width:0}
-  .command-inputs button{flex:0 0 auto;padding:7px 12px}
-
-  /* ---------------- console ---------------- */
-  .console{
-    background:var(--surface-3);border:1px solid var(--line);
-    border-radius:var(--radius);overflow:hidden;
-  }
-
-  .console-bar{
+  .scan-meta{
     display:flex;align-items:center;justify-content:space-between;
-    gap:10px;flex-wrap:wrap;
-    padding:9px 12px;background:var(--surface);border-bottom:1px solid var(--line);
-  }
-  .console-bar h3{font-size:11.5px;font-weight:650}
-
-  .console-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-
-  .console-search{
-    background:var(--surface-3);border:1px solid var(--line);
-    border-radius:999px;padding:5px 11px;color:var(--txt);
-    font-family:inherit;font-size:11px;outline:none;
-    width:130px;transition:border-color .15s ease,box-shadow .15s ease;
-  }
-  .console-search:focus{
-    border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft);
+    gap:10px;margin-bottom:8px;
+    font-family:var(--mono);font-size:10.5px;color:var(--txt-3);
   }
 
-  .chips{display:flex;gap:4px;flex-wrap:wrap}
+  .player-list{
+    border:1px solid var(--line);border-radius:var(--radius-sm);
+    background:var(--panel-3);max-height:220px;overflow-y:auto;
+    margin-bottom:10px;
+  }
+  .player-list::-webkit-scrollbar{width:8px}
+  .player-list::-webkit-scrollbar-thumb{background:var(--line);border:2px solid var(--panel-3);border-radius:999px}
+  .player-list:empty::after{
+    content:"No players — hit SCAN.";display:block;
+    font-family:var(--mono);font-size:11px;color:var(--txt-3);
+    padding:20px;text-align:center;
+  }
+
+  .player-row{
+    display:grid;grid-template-columns:auto 1fr auto auto;
+    gap:10px;align-items:center;
+    padding:7px 10px;border-bottom:1px solid var(--line);
+    cursor:pointer;
+    font-family:var(--mono);font-size:11px;color:var(--txt-2);
+    background:transparent;border-left:2px solid transparent;
+    border-right:0;border-top:0;width:100%;text-align:left;
+    transition:background .1s ease, color .1s ease, border-color .1s ease;
+  }
+  .player-row:last-child{border-bottom:0}
+  .player-row:hover{background:var(--panel-2);color:var(--txt)}
+  .player-row.is-picked{background:var(--accent-dim);border-left-color:var(--accent);color:var(--accent)}
+  .player-row.is-flagged{background:var(--err-dim);border-left-color:var(--err);color:var(--err)}
+  .player-row .p-dot{width:6px;height:6px;border-radius:50%;background:var(--txt-3)}
+  .player-row.is-host .p-dot{background:var(--warn);box-shadow:0 0 6px var(--warn)}
+  .player-row.is-flagged .p-dot{background:var(--err);box-shadow:0 0 6px var(--err)}
+  .player-row .p-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .player-row .p-tag{font-size:9px;letter-spacing:.08em;color:var(--txt-3);text-transform:uppercase}
+  .player-row .p-score{font-variant-numeric:tabular-nums;color:var(--txt-3)}
+
+  .player-actions{
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));
+    gap:6px;
+  }
+
+  /* ---------------- MODE PANE MARKER ---------------- */
+  .mode-head{
+    display:flex;align-items:center;gap:8px;
+    padding:8px 10px;background:var(--accent-dim);
+    border:1px solid var(--accent-line);
+    border-radius:var(--radius-sm);
+    font-family:var(--mono);font-size:10.5px;
+    letter-spacing:.06em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:8px;
+  }
+  .mode-head strong{color:var(--txt);font-weight:700}
+
+  /* ---------------- CONSOLE ---------------- */
+  .panel-foot{
+    flex:0 0 auto;background:var(--panel-3);
+    border-top:1px solid var(--line);
+    display:flex;flex-direction:column;max-height:170px;
+  }
+
+  .foot-head{
+    display:flex;align-items:center;gap:8px;
+    padding:6px 10px;border-bottom:1px solid var(--line);
+    background:var(--panel-2);flex:0 0 auto;
+  }
+  .foot-head h3{
+    font-family:var(--mono);font-size:9.5px;font-weight:700;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--txt-2);
+  }
+  .foot-tools{display:flex;align-items:center;gap:6px;margin-left:auto}
+
+  .foot-search{
+    background:var(--panel-3);border:1px solid var(--line);
+    border-radius:var(--radius-sm);padding:3px 8px;
+    color:var(--txt);font-family:var(--mono);font-size:10.5px;
+    outline:none;width:110px;
+  }
+  .foot-search:focus{border-color:var(--accent)}
 
   .chip{
-    font-size:10.5px;font-weight:600;padding:4px 9px;border-radius:999px;
-    background:transparent;border:1px solid var(--line);color:var(--muted);
+    font-family:var(--mono);font-size:9.5px;font-weight:600;
+    letter-spacing:.04em;text-transform:uppercase;
+    padding:3px 8px;border-radius:2px;
+    background:transparent;border:1px solid var(--line);
+    color:var(--txt-3);cursor:pointer;
   }
-  .chip:hover{background:var(--surface-2);color:var(--txt)}
-  .chip.is-active{
-    background:var(--accent-soft);border-color:transparent;color:var(--accent);
-  }
+  .chip:hover{color:var(--txt-2);border-color:var(--line-2)}
+  .chip.is-active{background:var(--accent-dim);border-color:var(--accent-line);color:var(--accent)}
 
-  .console-body{
-    padding:11px 13px;font-family:var(--mono);font-size:11.5px;line-height:1.8;
-    max-height:220px;overflow-y:auto;
+  .foot-log{
+    padding:6px 10px 8px;overflow-y:auto;
+    font-family:var(--mono);font-size:11px;line-height:1.65;
+    flex:1 1 auto;min-height:0;
   }
-  .console-body p{color:var(--muted);white-space:pre-wrap;word-break:break-word}
-  .console-body .t{color:var(--dim);margin-right:8px}
-  .console-body .tag{margin-right:6px;font-weight:600}
-  .console-body .ok{color:var(--green)}
-  .console-body .warn{color:var(--amber)}
-  .console-body .err{color:var(--red)}
-  .console-body .info{color:var(--accent)}
+  .foot-log::-webkit-scrollbar{width:8px}
+  .foot-log::-webkit-scrollbar-thumb{background:var(--line);border:2px solid var(--panel-3);border-radius:999px}
+  .foot-log p{color:var(--txt-2);white-space:pre-wrap;word-break:break-word}
+  .foot-log .t{color:var(--txt-3);margin-right:8px}
+  .foot-log .tag{margin-right:6px;font-weight:600}
+  .foot-log .ok{color:var(--ok)}
+  .foot-log .warn{color:var(--warn)}
+  .foot-log .err{color:var(--err)}
+  .foot-log .info{color:var(--accent)}
 
-  .console-body::-webkit-scrollbar{width:8px}
-  .console-body::-webkit-scrollbar-thumb{
-    background:var(--line);border-radius:999px;border:2px solid var(--surface-3);
-  }
-
-  footer.page-foot{
-    text-align:center;font-size:10.5px;color:var(--dim);padding-top:4px;
-  }
-
-  /* ---------------- toasts ---------------- */
+  /* ---------------- TOASTS ---------------- */
   .toast-stack{
-    position:fixed;top:16px;right:16px;z-index:120;
-    display:flex;flex-direction:column;gap:8px;
-    max-width:300px;width:calc(100% - 32px);
-    pointer-events:none;
+    position:fixed;bottom:18px;right:18px;z-index:200;
+    display:flex;flex-direction:column;gap:6px;
+    max-width:280px;pointer-events:none;
   }
   .toast{
     pointer-events:auto;
-    background:var(--surface);border:1px solid var(--line);
-    border-left:3px solid var(--accent);
+    background:var(--panel);border:1px solid var(--line-2);
+    border-left:2px solid var(--accent);
     border-radius:var(--radius-sm);
-    padding:9px 12px;font-size:11.5px;line-height:1.45;
-    box-shadow:var(--shadow);
-    animation:toastIn .22s ease;
+    padding:8px 11px;font-family:var(--mono);font-size:11px;
+    line-height:1.4;box-shadow:var(--shadow);
+    animation:toastIn .18s ease;
   }
-  .toast.ok  {border-left-color:var(--green)}
-  .toast.warn{border-left-color:var(--amber)}
-  .toast.err {border-left-color:var(--red)}
-  .toast strong{display:block;font-size:11.5px;font-weight:700;margin-bottom:2px}
-  .toast span{color:var(--muted)}
-  @keyframes toastIn{
-    from{opacity:0;transform:translateX(20px)}
-    to{opacity:1;transform:none}
+  .toast.ok{border-left-color:var(--ok)}
+  .toast.warn{border-left-color:var(--warn)}
+  .toast.err{border-left-color:var(--err)}
+  .toast strong{
+    display:block;font-size:10.5px;font-weight:700;
+    letter-spacing:.04em;text-transform:uppercase;margin-bottom:2px;
   }
+  .toast span{color:var(--txt-2)}
+  @keyframes toastIn{from{opacity:0;transform:translateX(16px)}to{opacity:1;transform:none}}
 
-  /* ---------------- responsive ---------------- */
-  @media (max-width:640px){
-    .shell{padding:14px 12px 40px;gap:16px}
-    .topbar{position:static;padding:9px 11px;gap:10px}
-    .brand p{display:none}
-    .command{grid-template-columns:1fr;gap:8px;padding:11px 12px}
-    .command-inputs input{flex:1 1 100%}
-    .command-inputs button{flex:1 1 100%}
+  /* ---------------- RESPONSIVE ---------------- */
+  @media (max-width:960px){
+    .panel{top:0 !important;left:0 !important;width:100vw;height:100vh;max-width:100vw;max-height:100vh;border-radius:0;border:0}
+    .row{grid-template-columns:120px 1fr}
+    .cmd{grid-template-columns:1fr;gap:6px}
     .stats{grid-template-columns:repeat(2,1fr)}
-    .toast-stack{top:10px;right:10px;width:calc(100% - 20px)}
+    .player-actions{grid-template-columns:repeat(2,1fr)}
   }
 
   @media (prefers-reduced-motion:reduce){
-    html{scroll-behavior:auto}
-    *,*::before,*::after{animation:none!important;transition:none!important}
+    *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important}
   }
 </style>
 </head>
-<body>
+<body data-in-game="false" data-panel-open="false" data-mode="unknown">
 
-<input type="checkbox" id="theme-toggle" class="sr-only" aria-label="Toggle color theme" />
-<a class="skip" href="#main">Skip to content</a>
+<input type="checkbox" id="theme-toggle" class="sr-only" aria-label="Toggle theme" />
 
 <div class="toast-stack" data-role="toasts" role="status" aria-live="polite" aria-atomic="false"></div>
 
-<div class="shell">
+<button class="launcher" data-action="open-panel" title="Open panel">B</button>
 
-  <!-- ============ TOPBAR ============ -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo">B</div>
-      <div>
-        <h1>Blooket Panel</h1>
-        <p>Match control</p>
-      </div>
+<section class="panel" id="panel" role="dialog" aria-label="Blooket panel">
+
+  <header class="panel-head" data-role="drag-handle">
+    <div class="mark">B</div>
+    <div class="panel-title">
+      Blooket Panel
+      <span data-role="mode">—</span>
     </div>
-
-    <nav class="nav" aria-label="Sections">
-      <a href="#join">Join</a>
-      <a href="#blooks">Blooks</a>
-      <a href="#overrides">Overrides</a>
-      <a href="#gameplay">Gameplay</a>
-      <a href="#console">Console</a>
-    </nav>
-
-    <div class="topbar-right">
-      <div class="pill">
-        <span class="dot live"></span>
-        <span data-role="status">Not in a game</span>
-      </div>
-
-      <label class="theme-toggle" for="theme-toggle" title="Toggle theme">
-        <span aria-hidden="true"></span>
-        <span class="sr-only">Toggle color theme</span>
-      </label>
+    <div class="panel-status">
+      <span class="led" data-role="led"></span>
+      <span data-role="status">offline</span>
     </div>
+    <button class="head-btn" data-action="theme" title="Theme">◐</button>
+    <button class="head-btn" data-action="minimize" title="Minimize">—</button>
+    <button class="head-btn" data-action="close-panel" title="Close">×</button>
   </header>
 
-  <main class="main" id="main" style="display:flex;flex-direction:column;gap:20px">
+  <nav class="panel-tabs" role="tablist">
+    <button class="tab is-active" data-action="tab" data-tab-target="join">Join</button>
+    <button class="tab" data-action="tab" data-tab-target="players">Players</button>
+    <button class="tab" data-action="tab" data-tab-target="grief">Grief</button>
+    <button class="tab" data-action="tab" data-tab-target="overrides">Overrides</button>
+    <button class="tab" data-action="tab" data-tab-target="gameplay">Gameplay</button>
+  </nav>
 
-    <!-- ---- stats ---- -->
-    <section class="stats" aria-label="Match statistics">
-      <div class="stat"><span>Score</span><strong data-stat="score">0</strong></div>
+  <div class="panel-body">
+
+    <div class="stats">
+      <div class="stat"><span data-role="primary-stat">Score</span><strong data-stat="score">0</strong></div>
       <div class="stat"><span>Rank</span><strong data-stat="rank">—</strong></div>
-      <div class="stat"><span>Question</span><strong data-stat="question">—</strong></div>
-      <div class="stat"><span>Session</span><strong data-stat="uptime">00:00:00</strong></div>
-    </section>
+      <div class="stat"><span>Players</span><strong data-stat="players">0</strong></div>
+      <div class="stat"><span>Uptime</span><strong data-stat="uptime">00:00:00</strong></div>
+    </div>
 
-    <!-- ============ JOIN ============ -->
-    <section id="join">
-      <p class="sec-title">Join Match</p>
+    <!-- ==================== JOIN ==================== -->
+    <div class="tab-pane is-active" data-tab="join">
 
-      <div class="grid">
-
-        <article class="card" data-module="join">
-          <header class="card-head">
-            <div class="icon" aria-hidden="true">⇥</div>
-            <div class="card-title">
-              <h3>Join as Identity</h3>
-              <p>Synthetic name + chosen blook</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
-
-          <div class="fields">
-            <div class="field-row">
-              <div>
-                <label class="field-label" for="join-name">Display name</label>
-                <input id="join-name" type="text" placeholder="anything" data-field="name" />
-              </div>
-              <div>
-                <label class="field-label" for="join-pin">Game PIN</label>
-                <input id="join-pin" type="text" inputmode="numeric" placeholder="000000" data-field="pin" />
-              </div>
-            </div>
-
-            <div>
-              <label class="field-label" for="join-blook">Blook</label>
-              <input id="join-blook" type="text" placeholder="picked from list below" data-field="blook" readonly />
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn-primary" data-action="join">Join Game</button>
-            <button class="btn-ghost" data-action="leave">Leave</button>
-          </div>
-        </article>
-
-        <article class="card" data-module="identity">
-          <header class="card-head">
-            <div class="icon p" aria-hidden="true">✦</div>
-            <div class="card-title">
-              <h3>Identity Generator</h3>
-              <p>Random name, ready to drop in</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
-
-          <p class="card-body">
-            Produces a throwaway display name. Combine with any blook from the picker.
-          </p>
-
-          <div class="fields">
-            <div>
-              <label class="field-label" for="id-pattern">Pattern</label>
-              <select id="id-pattern" data-field="pattern">
-                <option value="word+num">Word + number</option>
-                <option value="leetword">Leet word</option>
-                <option value="short">Short gibberish</option>
-              </select>
-            </div>
-            <div>
-              <label class="field-label" for="id-out">Output</label>
-              <input id="id-out" type="text" placeholder="—" data-field="output" readonly />
-            </div>
-          </div>
-
-          <div class="actions">
-            <button class="btn-primary" data-action="generate">Generate</button>
-            <button class="btn-ghost" data-action="use-identity">Use Name</button>
-          </div>
-        </article>
-
-      </div>
-    </section>
-
-    <!-- ============ BLOOK PICKER ============ -->
-    <section id="blooks">
-      <p class="sec-title">Blook Picker</p>
-      <p class="sec-hint">
-        Full catalog — event, chromatic, rare, whatever. Pick one and it becomes your join identity.
-      </p>
-
-      <div class="picker">
-        <div class="picker-bar">
-          <input type="search" data-field="blookSearch" placeholder="Search blooks…" aria-label="Search blooks" />
-          <button class="btn-ghost" data-action="load-blooks">Load Catalog</button>
+      <div data-module="join">
+        <div class="sec">Session</div>
+        <div class="row">
+          <label for="pin">Game PIN</label>
+          <input id="pin" type="text" inputmode="numeric" placeholder="000000" data-field="pin" />
         </div>
-
-        <div class="blook-grid" data-role="blook-grid" role="listbox" aria-label="Blook catalog"></div>
-
-        <div class="picker-foot">
-          <span>Selected: <strong data-role="blook-selected">none</strong></span>
-          <button class="btn-primary" data-action="use-blook">Use Blook</button>
+        <div class="row">
+          <label for="name">Display name</label>
+          <input id="name" type="text" placeholder="anything" data-field="name" />
+        </div>
+        <div class="row">
+          <label for="blook">Blook</label>
+          <input id="blook" type="text" placeholder="— pick one below —" data-field="blook" readonly />
+        </div>
+        <div class="row">
+          <label>Actions</label>
+          <div class="inline">
+            <button class="btn go" data-action="join">Join</button>
+            <button class="btn ghost" data-action="leave">Leave</button>
+            <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--txt-3);" data-role="state">idle</span>
+          </div>
         </div>
       </div>
-    </section>
 
-    <!-- ============ LIVE OVERRIDES ============ -->
-    <section id="overrides">
-      <p class="sec-title">Live Overrides</p>
-      <p class="sec-hint">
-        Type anything into a value box — numbers, text, whatever — then hit Go.
-        Leave a player field blank to target yourself.
-      </p>
-
-      <div class="commands">
-
-        <div class="command" data-module="cmd-score">
-          <div class="command-info">
-            <strong>Change Score</strong>
-            <small>Set any player's score to any value</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="target" placeholder="player (blank = you)" />
-            <input type="text" data-field="value" placeholder="value" />
-            <button class="btn-primary" data-action="go">Go</button>
+      <div data-module="identity">
+        <div class="sec">Identity</div>
+        <div class="row">
+          <label for="id-pattern">Pattern</label>
+          <select id="id-pattern" data-field="pattern">
+            <option value="word+num">Word + number</option>
+            <option value="leetword">Leet word</option>
+            <option value="short">Short gibberish</option>
+          </select>
+        </div>
+        <div class="row">
+          <label for="id-out">Generated</label>
+          <div class="inline">
+            <input id="id-out" type="text" placeholder="—" data-field="output" readonly />
+            <button class="btn" data-action="generate">Roll</button>
+            <button class="btn ghost" data-action="use-identity">Use</button>
           </div>
         </div>
-
-        <div class="command" data-module="cmd-name">
-          <div class="command-info">
-            <strong>Change Name</strong>
-            <small>Rename yourself mid-match</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="new name" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-chat">
-          <div class="command-info">
-            <strong>Send Chat</strong>
-            <small>Broadcast a message to the lobby</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="message" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-currency">
-          <div class="command-info">
-            <strong>Set In-Game Currency</strong>
-            <small>Gold, crypto, fossils — mode dependent</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="target" placeholder="player (blank = you)" />
-            <input type="text" data-field="value" placeholder="amount" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-blook">
-          <div class="command-info">
-            <strong>Swap Blook In-Game</strong>
-            <small>Change your visible blook on the fly</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="blook name or id" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-kick">
-          <div class="command-info">
-            <strong>Kick Player</strong>
-            <small>Remove a player from the match</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="target" placeholder="player name" />
-            <button class="btn-danger" data-action="go">Kick</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-time">
-          <div class="command-info">
-            <strong>Set Timer</strong>
-            <small>Override the round countdown, in seconds</small>
-          </div>
-          <div class="command-inputs">
-            <input type="text" data-field="value" placeholder="seconds" />
-            <button class="btn-primary" data-action="go">Go</button>
-          </div>
-        </div>
-
-        <div class="command" data-module="cmd-force">
-          <div class="command-info">
-            <strong>Force End Round</strong>
-            <small>Skip straight to the results screen</small>
-          </div>
-          <div class="command-inputs">
-            <button class="btn-danger" data-action="go">Force</button>
-          </div>
-        </div>
-
       </div>
-    </section>
 
-    <!-- ============ GAMEPLAY ============ -->
-    <section id="gameplay">
-      <p class="sec-title">Gameplay</p>
-      <div class="grid">
+    </div>
 
-        <article class="card" data-module="auto-answer">
-          <header class="card-head">
-            <div class="icon" aria-hidden="true">⚡</div>
-            <div class="card-title">
-              <h3>Auto-Answer</h3>
-              <p>Solves questions the instant they render</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
+    <!-- ==================== PLAYERS ==================== -->
+    <div class="tab-pane" data-tab="players" data-module="players">
+      <div class="sec">Scanner</div>
+      <div class="scan-bar">
+        <input type="text" data-field="target" placeholder="target player" aria-label="Target player" />
+        <button class="btn go" data-action="scan">Scan</button>
+      </div>
+      <div class="scan-meta">
+        <label class="inline" style="gap:8px;">
+          <span class="sw"><input type="checkbox" data-field="autoScan" checked /><span></span></span>
+          <span>Auto-scan every 30s</span>
+        </label>
+        <span data-role="scan-time">never</span>
+      </div>
 
-          <div class="toggles">
-            <label class="toggle">
-              <span>Enabled</span>
-              <input type="checkbox" class="switch" role="switch" data-field="enabled" />
+      <div class="player-list" data-role="player-list" role="listbox" aria-label="Players in lobby"></div>
+
+      <div class="sec">Target Actions (selected)</div>
+      <div class="player-actions">
+        <button class="btn danger" data-action="crash-player">Crash</button>
+        <button class="btn danger" data-action="nuke-player">Nuke</button>
+        <button class="btn warn"  data-action="lag-player">Lag</button>
+        <button class="btn warn"  data-action="freeze-player">Freeze</button>
+        <button class="btn"       data-action="mute-player">Mute</button>
+        <button class="btn warn"  data-action="zero-player">Zero</button>
+        <button class="btn danger" data-action="steal-full">Steal 100%</button>
+        <button class="btn danger" data-action="kick-player">Kick</button>
+      </div>
+
+      <div class="sec">Host</div>
+      <div class="player-actions">
+        <button class="btn danger" data-action="crash-host">Crash Host</button>
+        <button class="btn warn"  data-action="lag-host">Lag Host</button>
+        <button class="btn warn"  data-action="freeze-host">Freeze Host</button>
+        <button class="btn danger" data-action="disconnect-host">DC Host</button>
+        <button class="btn danger" data-action="kick-host">Kick Host</button>
+      </div>
+
+      <div class="sec">Self</div>
+      <div class="player-actions">
+        <button class="btn danger" data-action="crash-self">Self-Destruct</button>
+        <button class="btn" data-action="leave">Leave Match</button>
+      </div>
+    </div>
+
+    <!-- ==================== GRIEF ==================== -->
+    <div class="tab-pane" data-tab="grief" data-module="grief">
+      <div class="sec">Mass Actions</div>
+      <div class="player-actions">
+        <button class="btn danger" data-action="nuke-lobby">Nuke Lobby</button>
+        <button class="btn danger" data-action="freeze-all">Freeze All</button>
+        <button class="btn"       data-action="mute-all">Mute All</button>
+        <button class="btn warn"  data-action="zero-everyone">Zero Everyone</button>
+        <button class="btn danger" data-action="steal-from-all">Steal From All</button>
+        <button class="btn danger" data-action="drain-everyone">Drain Everyone</button>
+        <button class="btn warn"  data-action="reverse-scores">Reverse Scores</button>
+        <button class="btn warn"  data-action="scramble-names">Scramble Names</button>
+        <button class="btn danger" data-action="force-kick-all">Force Kick All</button>
+      </div>
+
+      <div class="sec">Bot Injection</div>
+      <div class="player-actions">
+        <button class="btn go" data-action="spawn-bots" data-count="5">Spawn 5</button>
+        <button class="btn go" data-action="spawn-bots" data-count="10">Spawn 10</button>
+        <button class="btn go" data-action="spawn-bots" data-count="20">Spawn 20</button>
+      </div>
+
+      <div class="sec">Detection</div>
+      <div class="player-actions">
+        <button class="btn warn" data-action="detect-mods">Detect Mods</button>
+        <button class="btn danger" data-action="kick-mods">Kick Detected Mods</button>
+      </div>
+
+      <div class="sec">Timing</div>
+      <div class="cmd">
+        <div class="cmd-name">Pacing<small>between mass actions</small></div>
+        <div class="cmd-inputs">
+          <input type="number" min="0" step="50" value="120" data-field="pace" placeholder="ms" aria-label="Pacing in milliseconds" />
+          <label class="inline" style="gap:6px;margin-left:auto;">
+            <span class="sw"><input type="checkbox" data-field="loopMass" /><span></span></span>
+            <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);">loop forever</span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== OVERRIDES ==================== -->
+    <div class="tab-pane" data-tab="overrides" data-module="overrides">
+
+      <div class="sec">Common</div>
+
+      <div class="cmd" data-module="cmd-score">
+        <div class="cmd-name"><span data-role="primary-stat">Score</span><small>blank player = you</small></div>
+        <div class="cmd-inputs">
+          <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+          <input type="text" data-field="value" placeholder="value" aria-label="Value" />
+          <button class="btn go" data-action="go">Set</button>
+        </div>
+      </div>
+
+      <div class="cmd" data-module="cmd-name">
+        <div class="cmd-name">Rename<small>mid-match</small></div>
+        <div class="cmd-inputs">
+          <input type="text" data-field="value" placeholder="new name" aria-label="New name" />
+          <button class="btn go" data-action="go">Set</button>
+        </div>
+      </div>
+
+      <div class="cmd" data-module="cmd-blook">
+        <div class="cmd-name">Blook<small>swap on the fly</small></div>
+        <div class="cmd-inputs">
+          <input type="text" data-field="value" placeholder="name or id" aria-label="Blook name or ID" />
+          <button class="btn go" data-action="go">Set</button>
+        </div>
+      </div>
+
+      <div class="cmd" data-module="cmd-chat">
+        <div class="cmd-name">Chat<small>broadcast to lobby</small></div>
+        <div class="cmd-inputs">
+          <input type="text" data-field="value" placeholder="message" aria-label="Chat message" />
+          <button class="btn go" data-action="go">Send</button>
+        </div>
+      </div>
+
+      <div class="cmd" data-module="cmd-time">
+        <div class="cmd-name">Timer<small>seconds remaining</small></div>
+        <div class="cmd-inputs">
+          <input type="text" data-field="value" placeholder="seconds" aria-label="Timer seconds" />
+          <button class="btn go" data-action="go">Set</button>
+        </div>
+      </div>
+
+      <div class="cmd" data-module="cmd-force">
+        <div class="cmd-name">End Round<small>skip to results</small></div>
+        <div class="cmd-inputs">
+          <button class="btn danger" data-action="go">Force</button>
+        </div>
+      </div>
+
+      <!-- ---- GOLD QUEST ---- -->
+      <div data-mode-pane="gold">
+        <div class="sec">Gold Quest</div>
+        <div class="mode-head">Mode <strong>Gold Quest</strong> — chest controls active</div>
+
+        <div class="cmd" data-module="gold-balance">
+          <div class="cmd-name">Gold<small>your balance</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Gold amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="gold-steal">
+          <div class="cmd-name">Steal Gold<small>from a player</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn danger" data-action="steal-all">Steal All</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="gold-steal-percent">
+          <div class="cmd-name">Steal %<small>10% / 25% / 50%</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-percent" data-percent="10">10%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="25">25%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="50">50%</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="gold-swap">
+          <div class="cmd-name">Swap Gold<small>with target</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-swap">Swap</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="gold-autopick">
+          <div class="cmd-name">Auto-Pick Max Chest<small>bot reads state, picks highest</small></div>
+          <div class="cmd-inputs">
+            <label class="inline" style="gap:6px;">
+              <span class="sw"><input type="checkbox" data-field="autoPickMax" checked /><span></span></span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);">on</span>
             </label>
           </div>
+        </div>
 
-          <div class="fields">
-            <div>
-              <label class="field-label" for="aa-delay">Reaction delay (ms)</label>
-              <input id="aa-delay" type="number" min="0" step="10" value="250" data-field="delay" />
-            </div>
+        <div class="cmd" data-module="gold-force-chest">
+          <div class="cmd-name">Force Chest<small>1 · 2 · 3</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="1-3" aria-label="Chest index" />
+            <button class="btn go" data-action="force-chest">Pick</button>
           </div>
+        </div>
+      </div>
 
-          <div class="actions">
-            <button class="btn-primary" data-action="start">Start</button>
-            <button class="btn-ghost" data-action="stop">Stop</button>
+      <!-- ---- CRYPTO HACK ---- -->
+      <div data-mode-pane="crypto">
+        <div class="sec">Crypto Hack</div>
+        <div class="mode-head">Mode <strong>Crypto Hack</strong> — wallet controls active</div>
+
+        <div class="cmd" data-module="crypto-balance">
+          <div class="cmd-name">Crypto<small>your wallet</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Crypto amount" />
+            <button class="btn go" data-action="go">Set</button>
           </div>
-        </article>
+        </div>
 
-        <article class="card" data-module="auto-bot">
-          <header class="card-head">
-            <div class="icon p" aria-hidden="true">▣</div>
-            <div class="card-title">
-              <h3>Auto-Bot</h3>
-              <p>Plays the match without you</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
-
-          <div class="fields">
-            <div>
-              <label class="field-label" for="bot-strategy">Strategy</label>
-              <select id="bot-strategy" data-field="strategy">
-                <option value="balanced">Balanced</option>
-                <option value="aggressive">Aggressive — max score</option>
-                <option value="passive">Passive — survive only</option>
-              </select>
-            </div>
-            <div class="field-row">
-              <div>
-                <label class="field-label" for="bot-min">Min (ms)</label>
-                <input id="bot-min" type="number" min="0" step="10" value="180" data-field="delayMin" />
-              </div>
-              <div>
-                <label class="field-label" for="bot-max">Max (ms)</label>
-                <input id="bot-max" type="number" min="0" step="10" value="420" data-field="delayMax" />
-              </div>
-            </div>
+        <div class="cmd" data-module="crypto-steal">
+          <div class="cmd-name">Steal Crypto<small>from a player</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn danger" data-action="steal-all">Steal All</button>
           </div>
+        </div>
 
-          <div class="actions">
-            <button class="btn-primary" data-action="deploy">Deploy</button>
-            <button class="btn-ghost" data-action="recall">Recall</button>
+        <div class="cmd" data-module="crypto-steal-percent">
+          <div class="cmd-name">Steal %<small>10% / 25% / 50%</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-percent" data-percent="10">10%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="25">25%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="50">50%</button>
           </div>
-        </article>
+        </div>
 
-        <article class="card" data-module="grind">
-          <header class="card-head">
-            <div class="icon r" aria-hidden="true">⟳</div>
-            <div class="card-title">
-              <h3>Grind Loop</h3>
-              <p>Unattended match farming</p>
-            </div>
-            <span class="badge" data-role="state">Idle</span>
-          </header>
-
-          <div class="fields">
-            <div class="field-row">
-              <div>
-                <label class="field-label" for="grind-games">Games / cycle</label>
-                <input id="grind-games" type="number" min="1" value="10" data-field="gamesPerCycle" />
-              </div>
-              <div>
-                <label class="field-label" for="grind-cooldown">Cooldown (s)</label>
-                <input id="grind-cooldown" type="number" min="0" value="5" data-field="cooldown" />
-              </div>
-            </div>
+        <div class="cmd" data-module="crypto-swap">
+          <div class="cmd-name">Swap Crypto<small>with target</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-swap">Swap</button>
           </div>
+        </div>
 
-          <div class="toggles">
-            <label class="toggle">
-              <span>Stop on error</span>
-              <input type="checkbox" class="switch" role="switch" data-field="stopOnError" checked />
+        <div class="cmd" data-module="crypto-autosolve">
+          <div class="cmd-name">Auto-Solve Password<small>bot reads state, enters correct</small></div>
+          <div class="cmd-inputs">
+            <label class="inline" style="gap:6px;">
+              <span class="sw"><input type="checkbox" data-field="autoSolve" checked /><span></span></span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);">on</span>
             </label>
           </div>
+        </div>
 
-          <div class="actions">
-            <button class="btn-primary" data-action="start">Start Loop</button>
-            <button class="btn-danger" data-action="kill">Kill</button>
-          </div>
-        </article>
-
-      </div>
-    </section>
-
-    <!-- ============ CONSOLE ============ -->
-    <section id="console">
-      <p class="sec-title">Activity Log</p>
-
-      <div class="console">
-        <div class="console-bar">
-          <h3>Console</h3>
-          <div class="console-tools">
-            <input type="search" class="console-search" data-field="search" placeholder="Search…" aria-label="Search log" />
-            <div class="chips" role="group" aria-label="Log filter">
-              <button class="chip is-active" data-action="filter" data-filter="all">All</button>
-              <button class="chip" data-action="filter" data-filter="info">Info</button>
-              <button class="chip" data-action="filter" data-filter="ok">Success</button>
-              <button class="chip" data-action="filter" data-filter="warn">Warn</button>
-              <button class="chip" data-action="filter" data-filter="err">Error</button>
-              <button class="chip" data-action="clear">Clear</button>
-            </div>
+        <div class="cmd" data-module="crypto-2fa">
+          <div class="cmd-name">2FA Bypass<small>disable own 2FA</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="disable-2fa">Disable</button>
           </div>
         </div>
 
-        <div class="console-body" data-role="log" role="log" aria-live="polite" aria-label="Activity log">
-          <p><span class="t">00:00:00</span><span class="tag info">[panel]</span>Ready.</p>
+        <div class="cmd" data-module="crypto-mine">
+          <div class="cmd-name">Instant Mine<small>no wait</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="instant-mine">Mine</button>
+          </div>
         </div>
       </div>
-    </section>
 
-    <footer class="page-foot">Local panel · nothing leaves this page</footer>
+      <!-- ---- FISHING FRENZY ---- -->
+      <div data-mode-pane="fishing">
+        <div class="sec">Fishing Frenzy</div>
+        <div class="mode-head">Mode <strong>Fishing Frenzy</strong> — frenzy controls active</div>
 
-  </main>
-</div>
+        <div class="cmd" data-module="fishing-weight">
+          <div class="cmd-name">Weight<small>primary stat</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="weight" aria-label="Weight" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
 
-<!-- ============ MODULE TEMPLATE ============ -->
-<template id="module-template">
-  <article class="card" data-module="MODULE_ID">
-    <header class="card-head">
-      <div class="icon" aria-hidden="true">◆</div>
-      <div class="card-title">
-        <h3>Module Title</h3>
-        <p>One-line description</p>
+        <div class="cmd" data-module="fishing-frenzy">
+          <div class="cmd-name">Frenzy<small>no cooldown</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go"     data-action="frenzy-on">Activate</button>
+            <button class="btn danger" data-action="frenzy-off">Cancel</button>
+            <label class="inline" style="margin-left:auto;gap:6px;">
+              <span class="sw"><input type="checkbox" data-field="frenzyPermanent" /><span></span></span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);">permanent</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="fishing-depth">
+          <div class="cmd-name">Depth<small>line depth</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="depth" aria-label="Depth" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="fishing-perfect">
+          <div class="cmd-name">Perfect Catch<small>auto</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go"     data-action="perfect-on">Enable</button>
+            <button class="btn danger" data-action="perfect-off">Disable</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="fishing-bait">
+          <div class="cmd-name">Unlimited Bait<small>no depletion</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="unlimited-bait">Enable</button>
+          </div>
+        </div>
       </div>
-      <span class="badge" data-role="state">Idle</span>
-    </header>
-    <div class="fields">
-      <div>
-        <label class="field-label" for="MODULE_ID-value">Value</label>
-        <input id="MODULE_ID-value" type="text" data-field="value" />
+
+      <!-- ---- DECEPTIVE DINOS ---- -->
+      <div data-mode-pane="dino">
+        <div class="sec">Deceptive Dinos</div>
+        <div class="mode-head">Mode <strong>Deceptive Dinos</strong> — dig controls active</div>
+
+        <div class="cmd" data-module="dino-fossils">
+          <div class="cmd-name">Fossils<small>your count</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Fossil count" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="dino-catch-all">
+          <div class="cmd-name">Catch All Cheaters<small>investigate everyone</small></div>
+          <div class="cmd-inputs">
+            <button class="btn danger" data-action="catch-all-cheaters">Catch All</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="dino-investigate">
+          <div class="cmd-name">Investigate<small>specific player</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="investigate-player">Investigate</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="dino-rare">
+          <div class="cmd-name">Force Rare<small>next dig</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="force-rare">Force</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="dino-auto">
+          <div class="cmd-name">Auto-Dig<small>continuous</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go"     data-action="auto-dig-on">Enable</button>
+            <button class="btn danger" data-action="auto-dig-off">Stop</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- FACTORY ---- -->
+      <div data-mode-pane="factory">
+        <div class="sec">Factory</div>
+        <div class="mode-head">Mode <strong>Factory</strong> — production controls active</div>
+
+        <div class="cmd" data-module="factory-cash">
+          <div class="cmd-name">Cash<small>buying power</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Cash amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="factory-rate">
+          <div class="cmd-name">Production<small>per second</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="rate" aria-label="Production rate" />
+            <button class="btn go" data-action="instant-production">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="factory-buy">
+          <div class="cmd-name">Max Buy<small>all upgrades</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="instant-max">Buy All</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- RACING ---- -->
+      <div data-mode-pane="racing">
+        <div class="sec">Racing</div>
+        <div class="mode-head">Mode <strong>Racing</strong> — track controls active</div>
+
+        <div class="cmd" data-module="racing-progress">
+          <div class="cmd-name">Progress<small>0 – 100</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="0-100" aria-label="Progress" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="racing-win">
+          <div class="cmd-name">Instant Win<small>cross the line</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="force-win">Win</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="racing-boost">
+          <div class="cmd-name">Max Boost<small>speed multiplier</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="instant-max">Max</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- BLOOK RUSH ---- -->
+      <div data-mode-pane="rush">
+        <div class="sec">Blook Rush</div>
+        <div class="mode-head">Mode <strong>Blook Rush</strong> — defense controls active</div>
+
+        <div class="cmd" data-module="rush-defense">
+          <div class="cmd-name">Defense<small>your blooks</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Defense amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="rush-steal">
+          <div class="cmd-name">Instant Steal<small>all blooks</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn danger" data-action="steal-all">Steal</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="rush-max">
+          <div class="cmd-name">Max Defense<small>untouchable</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="instant-max">Max</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- TOWER DEFENSE 2 ---- -->
+      <div data-mode-pane="tower2">
+        <div class="sec">Tower Defense 2</div>
+        <div class="mode-head">Mode <strong>Tower Defense 2</strong> — wave controls active</div>
+
+        <div class="cmd" data-module="tower2-cash">
+          <div class="cmd-name">Cash<small>buying power</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Cash amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="tower2-max">
+          <div class="cmd-name">Max Cards<small>deck + artifacts</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="max-cards">Max</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="tower2-clear">
+          <div class="cmd-name">Clear Enemies<small>remove all</small></div>
+          <div class="cmd-inputs">
+            <button class="btn danger" data-action="clear-enemies">Clear</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- MONSTER BRAWL ---- -->
+      <div data-mode-pane="brawl">
+        <div class="sec">Monster Brawl</div>
+        <div class="mode-head">Mode <strong>Monster Brawl</strong> — combat controls active</div>
+
+        <div class="cmd" data-module="brawl-hp">
+          <div class="cmd-name">HP<small>your health</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="HP amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="brawl-oneshot">
+          <div class="cmd-name">Instant Kill<small>one-shot all</small></div>
+          <div class="cmd-inputs">
+            <button class="btn danger" data-action="instant-kill">Enable</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="brawl-invincible">
+          <div class="cmd-name">Invincibility<small>can't be hit</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="invincible">Enable</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="brawl-abils">
+          <div class="cmd-name">Max Abilities<small>all current maxed</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="max-abilities">Max</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="brawl-kill">
+          <div class="cmd-name">Kill All Enemies<small>clear screen</small></div>
+          <div class="cmd-inputs">
+            <button class="btn danger" data-action="kill-enemies">Kill</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="brawl-speed">
+          <div class="cmd-name">Half Enemy Speed<small>slow enemies</small></div>
+          <div class="cmd-inputs">
+            <button class="btn warn" data-action="half-speed">Slow</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- BATTLE ROYALE ---- -->
+      <div data-mode-pane="battle">
+        <div class="sec">Battle Royale</div>
+        <div class="mode-head">Mode <strong>Battle Royale</strong> — host-controlled</div>
+        <div class="mode-note static" style="margin-bottom:10px;">
+          Battle Royale is almost entirely host-side. Only auto-answer works reliably.
+        </div>
+
+        <div class="cmd" data-module="battle-auto">
+          <div class="cmd-name">Auto Answer<small>best effort</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="deploy">Enable</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- CANDY QUEST ---- -->
+      <div data-mode-pane="candy">
+        <div class="sec">Candy Quest</div>
+        <div class="mode-head">Mode <strong>Candy Quest</strong> — Halloween reskin of Gold Quest</div>
+
+        <div class="cmd" data-module="candy-balance">
+          <div class="cmd-name">Candy<small>your balance</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Candy amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="candy-steal">
+          <div class="cmd-name">Steal Candy<small>from player</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn danger" data-action="steal-all">Steal All</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="candy-percent">
+          <div class="cmd-name">Steal %<small>10% / 25% / 50%</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-percent" data-percent="10">10%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="25">25%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="50">50%</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="candy-swap">
+          <div class="cmd-name">Swap Candy<small>with target</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-swap">Swap</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="candy-autopick">
+          <div class="cmd-name">Auto-Pick Max Chest<small>bot reads state</small></div>
+          <div class="cmd-inputs">
+            <label class="inline" style="gap:6px;">
+              <span class="sw"><input type="checkbox" data-field="autoPickMax" checked /><span></span></span>
+              <span style="font-family:var(--mono);font-size:10px;color:var(--txt-3);">on</span>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- COCO CABANA ---- -->
+      <div data-mode-pane="coco">
+        <div class="sec">Coco Cabana</div>
+        <div class="mode-head">Mode <strong>Coco Cabana</strong> — ingredient controls active</div>
+
+        <div class="cmd" data-module="coco-ingredients">
+          <div class="cmd-name">Ingredients<small>your team's count</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Ingredient count" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="coco-steal">
+          <div class="cmd-name">Steal Ingredients<small>from enemy team</small></div>
+          <div class="cmd-inputs">
+            <button class="btn danger" data-action="steal-all">Steal</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="coco-golden">
+          <div class="cmd-name">Force Golden<small>next spawn</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="force-rare">Force</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- LASER TAG ---- -->
+      <div data-mode-pane="laser">
+        <div class="sec">Laser Tag</div>
+        <div class="mode-head">Mode <strong>Laser Tag</strong> — patched, limited support</div>
+        <div class="mode-note static" style="margin-bottom:10px;">
+          Laser Tag is heavily server-side. Only auto-answer works.
+        </div>
+
+        <div class="cmd" data-module="laser-auto">
+          <div class="cmd-name">Auto Answer<small>best effort</small></div>
+          <div class="cmd-inputs">
+            <button class="btn go" data-action="deploy">Enable</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- BUSY BEES ---- -->
+      <div data-mode-pane="bees">
+        <div class="sec">Busy Bees</div>
+        <div class="mode-head">Mode <strong>Busy Bees</strong> — team cooperation</div>
+
+        <div class="cmd" data-module="bees-points">
+          <div class="cmd-name">Team Points<small>your team</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Team points" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- SHAMROCK QUEST ---- -->
+      <div data-mode-pane="shamrock">
+        <div class="sec">Shamrock Quest</div>
+        <div class="mode-head">Mode <strong>Shamrock Quest</strong> — St. Patrick's reskin of Gold Quest</div>
+
+        <div class="cmd" data-module="shamrock-balance">
+          <div class="cmd-name">Gold<small>your balance</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Gold amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="shamrock-steal">
+          <div class="cmd-name">Steal Gold<small>from player</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn danger" data-action="steal-all">Steal</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="shamrock-percent">
+          <div class="cmd-name">Steal %<small>10% / 25% / 50%</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn warn" data-action="steal-percent" data-percent="10">10%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="25">25%</button>
+            <button class="btn warn" data-action="steal-percent" data-percent="50">50%</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ---- TAG OR TREAT ---- -->
+      <div data-mode-pane="tagtreat">
+        <div class="sec">Tag or Treat</div>
+        <div class="mode-head">Mode <strong>Tag or Treat</strong> — seasonal</div>
+
+        <div class="cmd" data-module="tagtreat-candy">
+          <div class="cmd-name">Candy<small>your count</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="value" placeholder="amount" aria-label="Candy amount" />
+            <button class="btn go" data-action="go">Set</button>
+          </div>
+        </div>
+
+        <div class="cmd" data-module="tagtreat-steal">
+          <div class="cmd-name">Steal Candy<small>from player</small></div>
+          <div class="cmd-inputs">
+            <input type="text" data-field="target" placeholder="player" aria-label="Target player" />
+            <button class="btn danger" data-action="steal-all">Steal</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="mode-note fallback">
+        Mode not detected — showing common overrides only.
+      </div>
+
+    </div>
+
+    <!-- ==================== GAMEPLAY ==================== -->
+    <div class="tab-pane" data-tab="gameplay" data-module="gameplay">
+      <div class="sec">Auto-Answer</div>
+      <div class="row" data-module="auto-answer">
+        <label>Enabled</label>
+        <div class="inline">
+          <label class="sw"><input type="checkbox" data-field="enabled" role="switch" /><span></span></label>
+          <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--txt-3);" data-role="state">idle</span>
+        </div>
+      </div>
+      <div class="row" data-module="auto-answer">
+        <label for="aa-delay">Delay (ms)</label>
+        <input id="aa-delay" type="number" min="0" step="10" value="250" data-field="delay" />
+      </div>
+      <div class="row" data-module="auto-answer">
+        <label>Run</label>
+        <div class="inline">
+          <button class="btn go" data-action="start">Start</button>
+          <button class="btn ghost" data-action="stop">Stop</button>
+        </div>
+      </div>
+
+      <div class="sec">Auto-Bot</div>
+      <div class="row" data-module="auto-bot">
+        <label for="bot-strategy">Strategy</label>
+        <select id="bot-strategy" data-field="strategy">
+          <option value="balanced">Balanced</option>
+          <option value="aggressive">Aggressive — max score</option>
+          <option value="passive">Passive — survive</option>
+        </select>
+      </div>
+      <div class="row" data-module="auto-bot">
+        <label>Delay range</label>
+        <div class="inline">
+          <input type="number" min="0" step="10" value="180" data-field="delayMin" placeholder="min" aria-label="Minimum delay" />
+          <input type="number" min="0" step="10" value="420" data-field="delayMax" placeholder="max" aria-label="Maximum delay" />
+        </div>
+      </div>
+      <div class="row" data-module="auto-bot">
+        <label>Run</label>
+        <div class="inline">
+          <button class="btn go" data-action="deploy">Deploy</button>
+          <button class="btn ghost" data-action="recall">Recall</button>
+          <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--txt-3);" data-role="state">idle</span>
+        </div>
+      </div>
+
+      <div class="sec">Grind Loop</div>
+      <div class="row" data-module="grind">
+        <label>Games / cycle</label>
+        <input type="number" min="1" value="10" data-field="gamesPerCycle" aria-label="Games per cycle" />
+      </div>
+      <div class="row" data-module="grind">
+        <label>Cooldown (s)</label>
+        <input type="number" min="0" value="5" data-field="cooldown" aria-label="Cooldown seconds" />
+      </div>
+      <div class="row" data-module="grind">
+        <label>Stop on error</label>
+        <label class="sw"><input type="checkbox" data-field="stopOnError" role="switch" checked /><span></span></label>
+      </div>
+      <div class="row" data-module="grind">
+        <label>Run</label>
+        <div class="inline">
+          <button class="btn go" data-action="start">Start</button>
+          <button class="btn danger" data-action="kill">Kill</button>
+          <span style="margin-left:auto;font-family:var(--mono);font-size:10px;color:var(--txt-3);" data-role="state">idle</span>
+        </div>
       </div>
     </div>
-    <div class="actions">
-      <button class="btn-primary" data-action="start">Start</button>
-      <button class="btn-ghost" data-action="stop">Stop</button>
-    </div>
-  </article>
-</template>
 
-<!-- ============ COMMAND ROW TEMPLATE ============ -->
-<template id="command-template">
-  <div class="command" data-module="cmd-ID">
-    <div class="command-info">
-      <strong>Command Title</strong>
-      <small>What it does.</small>
-    </div>
-    <div class="command-inputs">
-      <input type="text" data-field="value" placeholder="value" />
-      <button class="btn-primary" data-action="go">Go</button>
-    </div>
   </div>
-</template>
+
+  <footer class="panel-foot">
+    <div class="foot-head">
+      <h3>Console</h3>
+      <div class="foot-tools">
+        <input type="search" class="foot-search" data-field="search" placeholder="filter…" aria-label="Search log" />
+        <button class="chip is-active" data-action="filter" data-filter="all">All</button>
+        <button class="chip" data-action="filter" data-filter="info">Info</button>
+        <button class="chip" data-action="filter" data-filter="ok">Ok</button>
+        <button class="chip" data-action="filter" data-filter="warn">Warn</button>
+        <button class="chip" data-action="filter" data-filter="err">Err</button>
+        <button class="chip" data-action="clear">Clear</button>
+      </div>
+    </div>
+    <div class="foot-log" data-role="log" role="log" aria-live="polite" aria-label="Activity log">
+      <p><span class="t">00:00:00</span><span class="tag info">[panel]</span>Ready.</p>
+    </div>
+  </footer>
+
+</section>
+
+<!-- ============ PLAYER ROW TEMPLATE (cloned by engine into [data-role="player-list"]) ============
+     <button class="player-row" data-action="select-player" data-player="NAME">
+       <span class="p-dot"></span>
+       <span class="p-name">NAME</span>
+       <span class="p-tag">HOST</span>
+       <span class="p-score">0</span>
+     </button>
+     Add .is-host on the host's row, .is-picked on selected, .is-flagged on detected mods.
+============================================================================= -->
+
+<!-- ============ BLOOK ROW TEMPLATE ============
+     <button class="blook" data-action="pick" data-blook-id="..." data-blook-name="...">
+       <span class="blook-dot" style="--c:#hex"></span>
+       <span>Name</span>
+       <small>rarity</small>
+     </button>
+============================================================================= -->
 
 <script src="engine.js" defer></script>
 </body>
