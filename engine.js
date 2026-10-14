@@ -1757,3 +1757,381 @@
   });
 
 })();
+
+/* ============================================================
+   auto-join.js — appended to engine.js (inside the IIFE)
+
+   Two-stage join flow:
+     Stage 1: PIN input → submit
+     Stage 2: name input → optional blook → submit
+
+   Fallback strategy: every stage has a selector chain, then a
+   heuristic scanner that finds the target by attribute shape if
+   selectors miss. If a stage fails N times, it retries with
+   fresh DOM before giving up.
+   ============================================================ */
+
+  (function autoJoin(){
+    if (!/play\.blooket\.com\/play/i.test(location.href)) return;
+    if (window.__blkAutoJoinRan) return;
+    window.__blkAutoJoinRan = true;
+
+    if (typeof window.BP === 'undefined'){
+      console.warn('[auto-join] BP not found — engine.js failed to load.');
+      return;
+    }
+
+    const logJoin = (kind, msg) => {
+      try { BP.log(kind, 'auto-join', msg); } catch {}
+    };
+
+    const params = new URLSearchParams(location.search);
+    const pin   = (params.get('pin') || '').trim();
+    const name  = (params.get('name') || '').trim() || generateName('word+num');
+    const blook = (params.get('blook') || '').trim();
+
+    if (!pin){
+      logJoin('warn', 'No PIN in URL — auto-join skipped.');
+      return;
+    }
+
+    logJoin('info', `Auto-joining PIN ${pin} as "${name}".`);
+
+    /* ----------------------------------------------------------
+       Core utilities
+       ---------------------------------------------------------- */
+
+    const waitFor = (fn, { timeout = 15000, interval = 150 } = {}) =>
+      new Promise((resolve, reject) => {
+        const start = Date.now();
+        const tick = () => {
+          let v;
+          try { v = fn(); } catch { v = null; }
+          if (v) return resolve(v);
+          if (Date.now() - start > timeout)
+            return reject(new Error('timeout'));
+          setTimeout(tick, interval);
+        };
+        tick();
+      });
+
+    const setReactValue = (el, value) => {
+      const proto = el instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : HTMLInputElement.prototype;
+      const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+      setter.call(el, value);
+      el.dispatchEvent(new Event('input',  { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+      // Some Blooket inputs also listen for React's synthetic events
+      el.dispatchEvent(new Event('blur',   { bubbles: true }));
+    };
+
+    const reactClick = (el) => {
+      if (!el) return false;
+      const opts = { bubbles: true, cancelable: true, view: window };
+      const fire = (Ctor, type) => {
+        try { el.dispatchEvent(new Ctor(type, opts)); return true; }
+        catch { return false; }
+      };
+      fire(PointerEvent, 'pointerdown');
+      fire(MouseEvent,   'mousedown');
+      fire(PointerEvent, 'pointerup');
+      fire(MouseEvent,   'mouseup');
+      fire(MouseEvent,   'click');
+      // Last resort for iOS Safari quirks
+      try { el.click(); } catch {}
+      return true;
+    };
+
+    const isVisible = (el) => {
+      if (!el) return false;
+      try {
+        if (!el.offsetParent && el.style.position !== 'fixed') return false;
+        const r = el.getBoundingClientRect();
+        return r.width > 0 && r.height > 0;
+      } catch { return false; }
+    };
+
+    const textOf = (el) =>
+      (el?.getAttribute?.('aria-label') || el?.getAttribute?.('alt')
+      || el?.textContent || '').trim().toLowerCase();
+
+    /* ----------------------------------------------------------
+       Selector chains + heuristic scanners
+       ---------------------------------------------------------- */
+
+    const dismissCookies = () => {
+      const btns = [...document.querySelectorAll('button, [role="button"]')];
+      const accept = btns.find(b => {
+        const t = textOf(b);
+        return /^(accept all|accept|allow all|got it|ok|i agree)$/.test(t)
+          && isVisible(b);
+      });
+      if (accept){ reactClick(accept); logJoin('info', 'Dismissed cookie banner.'); }
+    };
+
+    // ---- PIN input ----
+    const PIN_SELECTORS = [
+      'input[name="join-code"]',
+      'input[placeholder="Game ID"]',
+      'input[aria-label="Enter Game ID"]',
+      'input[type="tel"][maxlength="7"]',
+      'input[placeholder*="game id" i]',
+      'input[placeholder*="pin" i]',
+      'input[placeholder*="code" i]'
+    ];
+
+    const findPinInput = () => {
+      for (const sel of PIN_SELECTORS){
+        const el = document.querySelector(sel);
+        if (isVisible(el)) return el;
+      }
+      // Fallback: scan every visible text/tel input, prefer ones
+      // that look like a PIN field (short maxlength, numeric).
+      const all = [...document.querySelectorAll('input')].filter(isVisible);
+      const scored = all.map(el => {
+        let score = 0;
+        const maxlen = Number(el.maxLength) || 0;
+        if (el.type === 'tel') score += 5;
+        if (el.inputMode === 'numeric') score += 4;
+        if (maxlen > 0 && maxlen <= 8) score += 3;
+        if (/game|pin|code|join/i.test(el.placeholder || '')) score += 3;
+        if (/name|nick/i.test(el.placeholder || '')) score -= 4;
+        return { el, score };
+      }).sort((a, b) => b.score - a.score);
+      return scored[0]?.score > 0 ? scored[0].el : null;
+    };
+
+    // ---- Submit button (used in both stages) ----
+    const SUBMIT_SELECTORS = [
+      'button[type="submit"]:not([disabled])',
+      'button[class*="submitButton"]:not([disabled])',
+      'button[class*="SubmitButton"]:not([disabled])',
+      'div[role="button"][class*="joinButton"]',
+      '[role="button"][class*="submitButton"]'
+    ];
+
+    const findSubmit = (nearInput = null) => {
+      for (const sel of SUBMIT_SELECTORS){
+        const el = document.querySelector(sel);
+        if (isVisible(el) && !el.disabled) return el;
+      }
+      // Fallback: any visible button whose text is a join-ish verb
+      const btns = [...document.querySelectorAll('button, [role="button"]')]
+        .filter(b => isVisible(b) && !b.disabled);
+      const verb = btns.find(b =>
+        /^(join|enter|play|next|start|submit|continue|go)\b/i.test(textOf(b))
+      );
+      if (verb) return verb;
+      // Last resort: if there's exactly one enabled submit-like button, use it
+      const candidates = btns.filter(b => {
+        const cls = String(b.className || '');
+        return /submit|join|next|primary/i.test(cls);
+      });
+      if (candidates.length === 1) return candidates[0];
+      // Form-adjacent fallback: find the form that contains the input
+      if (nearInput?.form){
+        const inForm = nearInput.form.querySelector('button:not([disabled])');
+        if (isVisible(inForm)) return inForm;
+      }
+      return null;
+    };
+
+    // ---- Name input ----
+    const NAME_SELECTORS = [
+      'input[placeholder*="nickname" i]',
+      'input[placeholder*="name" i]',
+      'input[name="name"]',
+      'input[aria-label*="name" i]',
+      'input[type="text"]:not([readonly])'
+    ];
+
+    const findNameInput = () => {
+      for (const sel of NAME_SELECTORS){
+        const el = document.querySelector(sel);
+        if (isVisible(el) && !el.readOnly) return el;
+      }
+      // Fallback: shortest-constraint visible text input that isn't the PIN
+      const all = [...document.querySelectorAll('input')].filter(el =>
+        isVisible(el) && !el.readOnly
+      );
+      const scored = all.map(el => {
+        let score = 0;
+        if (/name|nick/i.test(el.placeholder || '')) score += 5;
+        if (el.type === 'text') score += 2;
+        if ((Number(el.maxLength) || 0) > 8) score += 1;
+        if (el.type === 'tel') score -= 4;
+        return { el, score };
+      }).sort((a, b) => b.score - a.score);
+      return scored[0]?.score > 0 ? scored[0].el : null;
+    };
+
+    // ---- Blook ----
+    const findBlook = (target) => {
+      const needle = target.toLowerCase().trim();
+      const pool = [...document.querySelectorAll('[alt], [aria-label], img, button, [role="button"]')];
+      // Exact match first
+      for (const el of pool){
+        const hay = textOf(el);
+        if (hay === needle) return el;
+      }
+      // Partial match
+      for (const el of pool){
+        const hay = textOf(el);
+        if (hay.includes(needle)) return el;
+      }
+      return null;
+    };
+
+    // ---- Error detection ----
+    const detectError = () => {
+      const texts = [...document.querySelectorAll('div, span, p')]
+        .filter(isVisible)
+        .map(el => (el.textContent || '').trim().toLowerCase());
+      return texts.find(t =>
+        /(game (not found|doesn't exist|does not exist)|invalid (pin|code)|no game|sorry)/i.test(t)
+      ) || null;
+    };
+
+    /* ----------------------------------------------------------
+       Stage runners with retry
+       ---------------------------------------------------------- */
+
+    // Returns true if stage 1 appears done (PIN accepted)
+    const runStage1 = async () => {
+      for (let attempt = 1; attempt <= 3; attempt++){
+        const pinInput = findPinInput();
+        if (!pinInput){
+          logJoin('warn', `Stage 1 attempt ${attempt}: PIN input not found.`);
+          await sleep(600);
+          continue;
+        }
+
+        logJoin('info', `Stage 1 attempt ${attempt}: entering PIN.`);
+        pinInput.focus();
+        setReactValue(pinInput, pin);
+        await sleep(300);
+
+        const btn = findSubmit(pinInput);
+        if (!btn){
+          logJoin('warn', `Stage 1 attempt ${attempt}: submit button not found.`);
+          // Try pressing Enter as a fallback
+          pinInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          pinInput.dispatchEvent(new KeyboardEvent('keypress', { key: 'Enter', bubbles: true }));
+          pinInput.dispatchEvent(new KeyboardEvent('keyup',   { key: 'Enter', bubbles: true }));
+          await sleep(800);
+        } else {
+          reactClick(btn);
+          logJoin('info', `Stage 1 attempt ${attempt}: PIN submitted.`);
+        }
+
+        // Wait for name field OR error OR timeout
+        const outcome = await Promise.race([
+          waitFor(findNameInput, { timeout: 5000 }).then(el => ({ kind: 'name', el })),
+          waitFor(detectError,   { timeout: 5000 }).then(msg => ({ kind: 'error', msg }))
+        ]).catch(() => ({ kind: 'timeout' }));
+
+        if (outcome.kind === 'name'){
+          logJoin('ok', 'Stage 1 complete.');
+          return true;
+        }
+        if (outcome.kind === 'error'){
+          logJoin('err', `PIN rejected: ${outcome.msg}`);
+          return false;
+        }
+        logJoin('warn', `Stage 1 attempt ${attempt}: no transition, retrying.`);
+      }
+      return false;
+    };
+
+    const runStage2 = async () => {
+      for (let attempt = 1; attempt <= 3; attempt++){
+        const nameInput = findNameInput();
+        if (!nameInput){
+          logJoin('warn', `Stage 2 attempt ${attempt}: name input not found.`);
+          await sleep(500);
+          continue;
+        }
+
+        logJoin('info', `Stage 2 attempt ${attempt}: entering name.`);
+        nameInput.focus();
+        setReactValue(nameInput, name);
+        await sleep(300);
+
+        if (blook){
+          const blookEl = findBlook(blook);
+          if (blookEl){
+            reactClick(blookEl);
+            logJoin('info', `Selected blook: ${blook}.`);
+            await sleep(400);
+          } else {
+            logJoin('warn', `Blook "${blook}" not found — using default.`);
+          }
+        }
+
+        const btn = findSubmit(nameInput);
+        if (!btn){
+          nameInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+          await sleep(600);
+        } else {
+          reactClick(btn);
+          logJoin('info', `Stage 2 attempt ${attempt}: submitted.`);
+        }
+
+        // Success = we navigated away or the lobby canvas appears
+        const ok = await waitFor(() => {
+          if (!/\/play/i.test(location.pathname)) return true;
+          if (document.querySelector('canvas')) return true;
+          if (!findNameInput()) return true; // form gone = we moved on
+          return false;
+        }, { timeout: 6000 }).then(() => true).catch(() => false);
+
+        if (ok){
+          logJoin('ok', 'Stage 2 complete — in lobby.');
+          return true;
+        }
+        logJoin('warn', `Stage 2 attempt ${attempt}: no transition, retrying.`);
+      }
+      return false;
+    };
+
+    /* ----------------------------------------------------------
+       Main
+       ---------------------------------------------------------- */
+
+    (async () => {
+      try {
+        logJoin('info', 'Waiting for play page…');
+        await waitFor(() => findPinInput() || findNameInput(), { timeout: 20000 });
+        dismissCookies();
+        await sleep(400);
+
+        // Stage 1 — only if we're still on the PIN screen
+        if (findPinInput()){
+          const stage1Ok = await runStage1();
+          if (!stage1Ok){
+            const err = detectError();
+            if (err) logJoin('err', `Blocked: ${err}`);
+            else logJoin('warn', 'Stage 1 failed — leaving form to user.');
+            try { BP.toast('warn', 'Auto-join', 'PIN step failed — finish manually.'); } catch {}
+            return;
+          }
+        }
+
+        // Stage 2
+        const stage2Ok = await runStage2();
+        if (!stage2Ok){
+          logJoin('warn', 'Stage 2 failed — leaving form to user.');
+          try { BP.toast('warn', 'Auto-join', 'Name step failed — finish manually.'); } catch {}
+          return;
+        }
+
+        // Make sure the panel is visible now that we're in
+        try { document.body.dataset.panelOpen = 'true'; } catch {}
+      } catch (e){
+        logJoin('err', `Auto-join gave up: ${e.message}`);
+        try { BP.toast('warn', 'Auto-join', 'Finish the form manually.'); } catch {}
+      }
+    })();
+  })();
